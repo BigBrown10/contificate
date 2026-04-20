@@ -82,11 +82,52 @@ export default function Home() {
       setState("done");
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Something went wrong";
+        err instanceof Error ? err.message : "Failed to generate slides.";
       setError(message);
       setState("error");
     }
   }, [keyword, count]);
+
+  const handleAutopilot = useCallback(async () => {
+    if (!keyword.trim()) return;
+
+    setState("loading");
+    setError("");
+    setSlides([]);
+    setLoadingMessage("Agent Cabal spinning up...");
+    const startTime = performance.now();
+
+    try {
+      const response = await fetch("/api/orchestrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keyword }),
+      });
+
+      const elapsed = (performance.now() - startTime) / 1000;
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || `Server error: ${response.status}`);
+      }
+
+      if (data.status === "failed") {
+        throw new Error(`Pipeline Failed: ${data.message} ${data.critique ? '(' + data.critique + ')' : ''}`);
+      }
+
+      setSlides(data.slides || []);
+      setGeneratedKeyword(data.angle || keyword);
+      setGenerationTime(Math.round(elapsed));
+      setHookSource("gemma"); // We know it's Gemini
+      setState("done");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Orchestrator failed.";
+      setError(message);
+      setState("error");
+    }
+  }, [keyword]);
 
   const handleFetchMusic = useCallback(async () => {
     setMusicLoading(true);
@@ -243,31 +284,40 @@ export default function Home() {
 
           <div className="input-group" style={{ flex: "none" }}>
             <label className="input-label">&nbsp;</label>
-            <button
-              id="generate-btn"
-              className="btn-generate"
-              onClick={handleGenerate}
-              disabled={state === "loading" || !keyword.trim()}
-            >
-              {state === "loading" ? (
-                <>
-                  <span
-                    style={{
-                      width: 16,
-                      height: 16,
-                      border: "2px solid rgba(10,10,12,0.3)",
-                      borderTop: "2px solid #0a0a0c",
-                      borderRadius: "50%",
-                      animation: "spin 0.8s linear infinite",
-                      display: "inline-block",
-                    }}
-                  />
-                  Generating...
-                </>
-              ) : (
-                <>⚡ Generate</>
-              )}
-            </button>
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button
+                id="generate-btn"
+                className="btn-generate"
+                onClick={handleGenerate}
+                disabled={state === "loading" || !keyword.trim()}
+              >
+                {state === "loading" ? "Generating..." : "⚡ Generate"}
+              </button>
+              <button
+                id="autopilot-btn"
+                className="btn-autopilot"
+                onClick={handleAutopilot}
+                title="AI Autopilot: Research, Judge, Composite & Save/Post"
+                disabled={state === "loading" || !keyword.trim()}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '16px 24px',
+                  borderRadius: '12px',
+                  fontFamily: 'Inter, sans-serif',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <span>🚀 Autopilot</span>
+              </button>
+            </div>
           </div>
         </div>
       </section>
