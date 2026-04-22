@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { SLIDE_WIDTH, SLIDE_HEIGHT } from "./hooks";
+import { SLIDE_WIDTH, SLIDE_HEIGHT, CTA_SLIDE_SUBTEXT } from "./types";
 
 /**
  * JINTA Slide Compositor
@@ -37,8 +37,8 @@ export async function compositeSlide(
   // 5. Create hook text SVG
   const hookOverlay = createHookTextOverlay(hookText);
 
-  // 6. Create CTA SVG
-  const ctaOverlay = createCtaOverlay("Download JINTA. Link in bio.");
+  // 6. (DEPRECATED) CTA footer removed from story slides for cleaner look
+  // const ctaOverlay = createCtaOverlay("Download JINTA. jinta.xyz");
 
   // 7. Composite all layers
   const result = await baseImage
@@ -46,7 +46,6 @@ export async function compositeSlide(
       { input: gradientOverlay, top: 0, left: 0 },
       { input: logoOverlay, top: 60, left: 48 },
       { input: hookOverlay, top: SLIDE_HEIGHT - 620, left: 0 },
-      { input: ctaOverlay, top: SLIDE_HEIGHT - 140, left: 0 },
     ])
     .png({ quality: 90 })
     .toBuffer();

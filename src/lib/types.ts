@@ -1,4 +1,24 @@
+// ─── JINTA Content Engine Constants ───
+export const SLIDE_WIDTH = 1080;
+export const SLIDE_HEIGHT = 1920;
+
+export const CTA_SLIDE_TEXT = "Build your kingdom in silence.\n\nSecure your access to jinta.xyz today.";
+export const CTA_SLIDE_SUBTEXT = "jinta.xyz →";
+
 // ─── JINTA Content Engine Types ───
+
+import { FreesoundTrack } from "./freesound";
+
+export interface StorySlide {
+  text: string;
+  role: "hook" | "problem" | "deepen" | "shift" | "insight" | "action" | "resolve";
+}
+
+export interface StorySequence {
+  id: string;
+  name: string;
+  slides: StorySlide[];
+}
 
 export interface PexelsPhoto {
   id: number;
@@ -34,7 +54,7 @@ export interface PexelsSearchResponse {
 export interface GeneratedSlide {
   id: string;
   hookText: string;
-  role: "hook" | "problem" | "deepen" | "shift" | "resolve" | "cta";
+  role: "hook" | "problem" | "deepen" | "shift" | "insight" | "action" | "resolve" | "cta";
   imageBase64: string;
   photographer: string;
 }
@@ -48,7 +68,8 @@ export interface GenerateResponse {
   slides: GeneratedSlide[];
   keyword: string;
   generatedAt: string;
-  hookSource?: "gemma" | "fallback";
+  hookSource?: "gemini" | "fallback";
+  musicTrack?: FreesoundTrack | null;
 }
 
 export interface GenerateError {

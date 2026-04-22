@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchPortraitPhotos } from "@/lib/pexels";
 import { compositeSlide, compositeCtaSlide } from "@/lib/compositor";
-import { CTA_SLIDE_TEXT, CTA_SLIDE_SUBTEXT } from "@/lib/hooks";
-import { generateStoryHooks } from "@/lib/gemma";
-import { GeneratedSlide, GenerateResponse, GenerateError } from "@/lib/types";
+import { CTA_SLIDE_TEXT, CTA_SLIDE_SUBTEXT, GeneratedSlide, GenerateResponse, GenerateError } from "@/lib/types";
+import { brainstormHooks, judgeDrafts } from "@/lib/gemini";
+import { fetchMusicTracks } from "@/lib/freesound";
 
 export const maxDuration = 60; // Allow up to 60s for batch processing
 
@@ -20,17 +20,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Generate story hooks via Gemma (falls back to hardcoded)
-    const storySlots = count - 1; // Reserve 1 for CTA
-    const { slides: storySlides, source: hookSource } =
-      await generateStoryHooks(keyword, storySlots);
+    // 1. Generate story hooks via Gemini 2.0 (High-IQ Narrative Engine)
+    const storyTargetCount = count - 1; // Subtract 1 for the mandatory CTA slide
+    const drafts = await brainstormHooks(keyword, storyTargetCount);
+    const evaluation = await judgeDrafts(drafts);
+    
+    if (evaluation.bestDraftIndex === -1) {
+       return NextResponse.json({ error: "The AI Judge rejected the content quality. Try a different keyword." }, { status: 500 });
+    }
+    
+    const winningDraft = drafts[evaluation.bestDraftIndex];
+    const storySlides = winningDraft.slides; 
+    const countWithCta = storySlides.length + 1; 
+    const hookSource = "gemini";
 
     console.log(
-      `[Generate] Using ${hookSource} hooks: ${storySlides.length} story + 1 CTA`
+      `[Generate] Using Gemini 2.0 hooks: ${storySlides.length} story + 1 CTA`
     );
 
-    // 2. Fetch photos from Pexels
-    const photos = await fetchPortraitPhotos(keyword, count);
+    // 2. Fetch photos from Pexels (Force use of raw keyword to avoid "corn plant" imagery)
+    const photos = await fetchPortraitPhotos(keyword, countWithCta);
 
     // 3. Composite each slide
     const slides: GeneratedSlide[] = [];
@@ -88,11 +97,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const response: GenerateResponse = {
+    // 4. Auto-fetch a matching music track for the ZIP
+    let selectedMusic = null;
+    try {
+      const tracks = await fetchMusicTracks(winningDraft.vibe || "dark", 1);
+      if (tracks.length > 0) selectedMusic = tracks[0];
+    } catch (err) {
+      console.error("Failed to auto-fetch music:", err);
+    }
+
+    const response: GenerateResponse & { musicTrack?: any } = {
       slides,
       keyword,
       generatedAt: new Date().toISOString(),
-      hookSource, // "gemma" or "fallback" — so the UI can show which engine was used
+      hookSource,
+      musicTrack: selectedMusic,
     };
 
     return NextResponse.json(response);

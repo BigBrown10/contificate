@@ -5,12 +5,19 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "tg": "node telegram-listener.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "archiver": "^7.0.1",
+    "form-data": "^4.0.5",
     "jszip": "^3.10.1",
     "next": "16.2.4",
+    "node-telegram-bot-api": "^0.67.0",
+    "playwright": "^1.59.1",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "sharp": "^0.34.5"

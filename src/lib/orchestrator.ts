@@ -4,8 +4,10 @@ import { brainstormHooks, judgeDrafts, JudgeResult, DraftSequence } from "./gemi
 import { fetchPortraitPhotos } from "./pexels";
 import { compositeSlide, compositeCtaSlide } from "./compositor";
 import { postTikTokCarousel } from "./ayrshare";
-import { CTA_SLIDE_TEXT, CTA_SLIDE_SUBTEXT } from "./hooks";
-import { GeneratedSlide } from "./types";
+import { GeneratedSlide, CTA_SLIDE_TEXT, CTA_SLIDE_SUBTEXT } from "./types";
+import { fetchMusicTracks, FreesoundTrack } from "./freesound";
+import { createBatchZip } from "./archive";
+import { sendApprovalRequest } from "./telegram";
 
 export interface OrchestratorResult {
   status: "posted" | "saved_for_review" | "failed";
@@ -53,9 +55,9 @@ export async function runAutopilotPipeline(keyword: string): Promise<Orchestrato
   const winningDraft = drafts[evaluation.bestDraftIndex];
   console.log(`[Orchestrator] Winner chosen! Score: ${evaluation.score}/10. Angle: ${winningDraft.angle}`);
 
-  // Step 3: Fetch Images & Composite Visuals
+  // Step 3: Fetch Images & Composite Visuals (Force use of raw keyword to avoid "corn plant" imagery)
   const expectedSlidesCount = winningDraft.slides.length + 1; // +1 for CTA
-  const photos = await fetchPortraitPhotos(winningDraft.angle, expectedSlidesCount);
+  const photos = await fetchPortraitPhotos(keyword, expectedSlidesCount);
   
   if (photos.length < expectedSlidesCount) {
     return { status: "failed", message: "Pexels failed to return enough images for the sequence." };
@@ -92,27 +94,35 @@ export async function runAutopilotPipeline(keyword: string): Promise<Orchestrato
     photographer: ctaPhoto.photographer,
   });
 
-  // Step 4: Publish or Save to Vault
-  // If score is 9 or 10, Auto-Post.
-  if (evaluation.score >= 9) {
-    try {
-      const caption = `Are you ready to level up? Start acting like it.\\n\\n#${keyword.replace(/\s+/g, '')} #discipline #jinta #masculinity #mindset`;
-      await postTikTokCarousel(generatedSlides, caption);
-      return {
-        status: "posted",
-        score: evaluation.score,
-        critique: evaluation.critique,
-        angle: winningDraft.angle,
-        slides: generatedSlides,
-        message: "Pipeline completed & auto-posted to TikTok successfully!"
-      };
-    } catch (err) {
-      console.error(`[Orchestrator] Failed to auto-post, falling back to local save.`, err);
-    }
+  // Step 4: Save to Vault, Zip, and Push to Telegram
+  const vaultPath = await saveToApprovedVault(keyword, winningDraft.angle, generatedSlides, evaluation);
+  
+  // Fetch matching music
+  let audioUrl: string | undefined;
+  try {
+    const musicTracks = await fetchMusicTracks(winningDraft.vibe, 1);
+    if (musicTracks.length > 0) audioUrl = musicTracks[0].previewUrl;
+  } catch (err) {
+    console.error(`[Orchestrator] Failed to fetch music for vibe ${winningDraft.vibe}:`, err);
   }
 
-  // If score is 8, or Auto-Post failed, Save locally
-  saveToApprovedVault(keyword, winningDraft.angle, generatedSlides, evaluation);
+  // Create ZIP
+  const base64Files = generatedSlides.map((s, i) => ({
+    name: `slide_${i + 1}_${s.role}.png`,
+    base64: s.imageBase64.replace(/^data:image\/png;base64,/, "")
+  }));
+  const zipPath = await createBatchZip(vaultPath, base64Files, audioUrl);
+
+  // Send to Telegram HITL
+  await sendApprovalRequest(
+    path.basename(vaultPath),
+    zipPath,
+    winningDraft.angle,
+    evaluation.score,
+    evaluation.critique
+  );
+
+
   
   return {
     status: "saved_for_review",
@@ -126,8 +136,9 @@ export async function runAutopilotPipeline(keyword: string): Promise<Orchestrato
 
 /**
  * Saves generated content to the local disk (_approved_vault folder).
+ * Returns the absolute path of the created folder.
  */
-function saveToApprovedVault(keyword: string, angle: string, slides: GeneratedSlide[], evaluation: JudgeResult) {
+function saveToApprovedVault(keyword: string, angle: string, slides: GeneratedSlide[], evaluation: JudgeResult): string {
   const vaultDir = path.join(process.cwd(), "_approved_vault");
   if (!fs.existsSync(vaultDir)) {
     fs.mkdirSync(vaultDir, { recursive: true });
@@ -156,6 +167,7 @@ function saveToApprovedVault(keyword: string, angle: string, slides: GeneratedSl
   fs.writeFileSync(path.join(savePath, `metadata.json`), JSON.stringify(metadata, null, 2));
 
   console.log(`[Orchestrator] Saved batch to ${savePath}`);
+  return savePath;
 }
 
 function scoreStr(score: number) {

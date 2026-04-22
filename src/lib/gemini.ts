@@ -1,33 +1,38 @@
-import { GoogleGenerativeAI, Schema, Type } from "@google/generative-ai";
-import { StorySlide } from "./hooks";
+import { GoogleGenerativeAI, SchemaType, Schema } from "@google/generative-ai";
+import { StorySlide } from "./types";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// Using Gemini 2.5 Flash for elite narrative depth and performance
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 // Define the expected output schema for the Brainstormer (Shot 1)
 const brainstormerSchema: Schema = {
-  type: Type.ARRAY,
+  type: SchemaType.ARRAY,
   description: "A list of 3 distinct TikTok story sequences.",
   items: {
-    type: Type.OBJECT,
+    type: SchemaType.OBJECT,
     properties: {
       angle: {
-        type: Type.STRING,
+        type: SchemaType.STRING,
         description: "The specific trendy angle or sub-topic (e.g., 'Dopamine Detox', '2AM Challenge')."
       },
+      vibe: {
+        type: SchemaType.STRING,
+        description: "The musical mood vibe that matches this story sequence."
+      },
       slides: {
-        type: Type.ARRAY,
-        description: "Exactly 4 slides for this story sequence.",
+        type: SchemaType.ARRAY,
+        description: "Exactly 6 slides for this story sequence.",
         items: {
-          type: Type.OBJECT,
+          type: SchemaType.OBJECT,
           properties: {
             text: {
-              type: Type.STRING,
-              description: "The slide text (under 80 characters)."
+              type: SchemaType.STRING,
+              description: "The slide text (under 90 characters)."
             },
             role: {
-              type: Type.STRING,
-              enum: ["hook", "problem", "deepen", "shift"],
+              type: SchemaType.STRING,
+              enum: ["hook", "problem", "deepen", "shift", "insight", "action"],
               description: "The narrative role of this slide."
             }
           },
@@ -35,12 +40,13 @@ const brainstormerSchema: Schema = {
         }
       }
     },
-    required: ["angle", "slides"]
+    required: ["angle", "vibe", "slides"]
   }
 };
 
 export interface DraftSequence {
   angle: string;
+  vibe: string;
   slides: StorySlide[];
 }
 
@@ -48,26 +54,36 @@ export interface DraftSequence {
  * SHOT 1: The Brainstormer
  * Takes a broad keyword, researches trendy angles, and generates 3 distinct story arcs.
  */
-export async function brainstormHooks(keyword: string): Promise<DraftSequence[]> {
-  const prompt = `You are an elite TikTok content strategist for JINTA, a male self-improvement brand.
-  
-Your task: Take the broad keyword "${keyword}" and brainstorm 3 highly specific, trendy angles that resonate with young men right now (think dopamine detox, monk mode, stoicism, focus, escaping the matrix).
+export async function brainstormHooks(keyword: string, storyCount: number = 6): Promise<DraftSequence[]> {
+  const prompt = `Your task: Take the broad keyword "${keyword}" and frame it EXCLUSIVELY through the lens of BREAKING CORN ADDICTION. 
 
-For EACH of the 3 angles, write a 4-slide story sequence.
-The narrative arc must be:
-1. HOOK - A scroll-stopping, punchy claim.
-2. PROBLEM - Name the pain point.
-3. DEEPEN - Connect it to identity.
-4. SHIFT - The mindset pivot.
+The Persona: 
+You are the world's most elite copywriter, working for JINTA, a brand dedicated to one mission: Saving men from the corn loop. You write with the grit of a Nike campaign and the investigative depth of Forbes. You are visceral, raw, and direct.
 
-Rules for the text:
-- Tone: Direct, masculine, raw. No cringe, no emojis, no hashtags.
-- Under 80 characters per slide.
-- Written in the second person ("you").
+CRITICAL MANDATE:
+- SLIDE 1 MUST explicitly mention "Corn" or "Corn Addiction" or "Corn Loop". THIS IS NON-NEGOTIABLE.
+- Slide 1 must be the absolute SUBJECT of the brand's mission: Breaking the corn attachment.
+- Use the keyword "${keyword}" as the NARRATIVE ANGLE for the corn talk. 
+- Every subsequent slide must be grounded in the visceral reality of addiction recovery.
 
-Return exactly 3 distinct concepts with their associated 4 slides.`;
+Strategic Pillars (Guidance):
+1. THE VOID: The neuro-cost of the corn loop. How it steals your future.
+2. THE ASCENSION (POV): The freedom waiting after you break the corn attachment.
+3. THE PROTOCOL: Brutally practical steps to stay clean from corn today.
 
-  console.log(`[Gemini] Firing Shot 1: Brainstorming angles for "${keyword}"...`);
+Narrative Structure:
+For EACH of the 3 concepts, write a ${storyCount}-slide story sequence.
+- Tone: Visceral, minimalist, high-prestige. No fluff. No silly TikTok speak besides "Corn".
+
+CRITICAL TIKTOK ALGOSPEAK RULES:
+- "porn" -> "corn"
+- "sex" -> "addiction" or "physical loop"
+- "fuck" -> "f*ck"
+- "addicted" -> "hooked" or "looped"
+
+Return exactly 3 distinct concepts with their associated ${storyCount} slides, including the "vibe" (dark, motivational, gym, success).`;
+
+  console.log(`[Gemini 2.0] Firing Shot 1: Brainstorming angles for "${keyword}"...`);
   
   const result = await model.generateContent({
     contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -79,26 +95,34 @@ Return exactly 3 distinct concepts with their associated 4 slides.`;
   });
 
   const rawText = result.response.text();
-  const drafts: DraftSequence[] = JSON.parse(rawText);
-  console.log(`[Gemini] Brainstormer returned ${drafts.length} drafts.`);
+  
+  // Programmatic Scrubbing: Force-replace any accidental "porn" or "sex" mentions before parsing
+  const cleanJson = rawText
+    .replace(/porn/gi, "corn")
+    .replace(/sex/gi, "seggs")
+    .replace(/fucking/gi, "freaking")
+    .replace(/fuck/gi, "f*ck");
+
+  const drafts: DraftSequence[] = JSON.parse(cleanJson);
+  console.log(`[Gemini 2.0] Brainstormer returned ${drafts.length} drafts.`);
   return drafts;
 }
 
 // Expected output schema for the Judge (Shot 2)
 const judgeSchema: Schema = {
-  type: Type.OBJECT,
+  type: SchemaType.OBJECT,
   description: "The evaluation result of the story sequences.",
   properties: {
     bestDraftIndex: {
-      type: Type.INTEGER,
+      type: SchemaType.INTEGER,
       description: "The index (0, 1, or 2) of the best draft. Return -1 if NO draft is worthy of an 8/10."
     },
     score: {
-      type: Type.INTEGER,
+      type: SchemaType.INTEGER,
       description: "The score of the best draft out of 10."
     },
     critique: {
-      type: Type.STRING,
+      type: SchemaType.STRING,
       description: "A brutal 1-sentence explanation of why this draft won (or why they all failed)."
     }
   },
