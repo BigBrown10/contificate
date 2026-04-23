@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# JINTA Local Data
+_approved_vault/
+scratch/
+tiktok_state.json
+**/metadata.json
+*.zip

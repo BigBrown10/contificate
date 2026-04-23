@@ -1,6 +1,5 @@
 import fs from "fs";
 import FormData from "form-data";
-import fetch from "node-fetch";
 
 /**
  * Sends the generated ZIP package to Telegram for Human-in-the-Loop review.
@@ -44,7 +43,8 @@ export async function sendApprovalRequest(
 
     const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
       method: "POST",
-      body: formData,
+      body: formData as any,
+      headers: formData.getHeaders(),
     });
 
     if (!response.ok) {

@@ -1,0 +1,44 @@
+name: JINTA Shadow Swarm (24/7 Autopilot)
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Run every hour on the dot
+  workflow_dispatch:     # Allow manual triggers from GitHub UI
+
+jobs:
+  run-swarm:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/checkout@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Librarian Agent (Research)
+        run: npx ts-node src/scripts/researcher.ts
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Run Shadow Worker (Content Generation)
+        run: npx ts-node src/scripts/shadow-worker.ts
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Cleanup
+        run: rm -rf _approved_vault # Ensure environment stays clean
