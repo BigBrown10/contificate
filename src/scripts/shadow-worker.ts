@@ -49,9 +49,26 @@ async function runShadowCycle() {
   // 4. Upload Assets to Supabase Storage
   // Note: runAutopilotPipeline saves to _approved_vault locally.
   const vaultDir = path.join(process.cwd(), "_approved_vault");
-  const latestBatch = fs.readdirSync(vaultDir)
-    .map(name => ({ name, time: fs.statSync(path.join(vaultDir, name)).mtime.getTime() }))
-    .sort((a, b) => b.time - a.time)[0].name;
+  if (!fs.existsSync(vaultDir)) {
+    console.warn("[ShadowWorker] No approved vault found yet; skipping storage upload.");
+    return;
+  }
+
+  const latestBatchEntry = fs.readdirSync(vaultDir)
+    .map(name => ({
+      name,
+      fullPath: path.join(vaultDir, name),
+      time: fs.statSync(path.join(vaultDir, name)).mtime.getTime()
+    }))
+    .filter(entry => fs.statSync(entry.fullPath).isDirectory())
+    .sort((a, b) => b.time - a.time)[0];
+
+  if (!latestBatchEntry) {
+    console.warn("[ShadowWorker] No batch folder found in approved vault.");
+    return;
+  }
+
+  const latestBatch = latestBatchEntry.name;
 
   const batchPath = path.join(vaultDir, latestBatch);
   const zipFile = fs.readdirSync(batchPath).find(f => f.endsWith(".zip"));

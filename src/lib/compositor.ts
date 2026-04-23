@@ -4,18 +4,18 @@ import * as opentype from "opentype.js";
 import sharp from "sharp";
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CTA_SLIDE_SUBTEXT } from "./types";
 
-const INTER_FONT_WOFF_PATH = path.join(
+const DISPLAY_FONT_WOFF_PATH = path.join(
   process.cwd(),
   "public",
   "fonts",
-  "Inter-Bold.woff"
+  "Montserrat-ExtraBold.woff"
 );
 
-const INTER_FONT_BUFFER = fs.readFileSync(INTER_FONT_WOFF_PATH);
-const INTER_FONT = opentype.parse(
-  INTER_FONT_BUFFER.buffer.slice(
-    INTER_FONT_BUFFER.byteOffset,
-    INTER_FONT_BUFFER.byteOffset + INTER_FONT_BUFFER.byteLength
+const DISPLAY_FONT_BUFFER = fs.readFileSync(DISPLAY_FONT_WOFF_PATH);
+const DISPLAY_FONT = opentype.parse(
+  DISPLAY_FONT_BUFFER.buffer.slice(
+    DISPLAY_FONT_BUFFER.byteOffset,
+    DISPLAY_FONT_BUFFER.byteOffset + DISPLAY_FONT_BUFFER.byteLength
   )
 );
 
@@ -136,22 +136,17 @@ interface TextPathOptions {
   y: number;
   fontSize: number;
   fill: string;
-  stroke?: string;
-  strokeWidth?: number;
   opacity?: number;
 }
 
 function createTextPath(text: string, options: TextPathOptions): string {
-  const path = INTER_FONT.getPath(text, options.x, options.y, options.fontSize, {
+  const path = DISPLAY_FONT.getPath(text, options.x, options.y, options.fontSize, {
     kerning: true,
   });
   const attributes = [
     `d="${path.toPathData({ optimize: true, decimalPlaces: 2 })}"`,
     `fill="${options.fill}"`,
-    options.stroke ? `stroke="${options.stroke}"` : null,
-    options.strokeWidth ? `stroke-width="${options.strokeWidth}"` : null,
     options.opacity !== undefined ? `opacity="${options.opacity}"` : null,
-    options.stroke ? `stroke-linejoin="round"` : null,
   ]
     .filter(Boolean)
     .join(" ");
@@ -164,11 +159,9 @@ function createCenteredTextPath(
   width: number,
   baselineY: number,
   fontSize: number,
-  fill: string,
-  stroke = "#000000",
-  strokeWidth = 4
+  fill: string
 ): string {
-  const textWidth = INTER_FONT.getAdvanceWidth(text, fontSize, { kerning: true });
+  const textWidth = DISPLAY_FONT.getAdvanceWidth(text, fontSize, { kerning: true });
   const x = (width - textWidth) / 2;
 
   return createTextPath(text, {
@@ -176,8 +169,6 @@ function createCenteredTextPath(
     y: baselineY,
     fontSize,
     fill,
-    stroke,
-    strokeWidth,
   });
 }
 
@@ -201,14 +192,7 @@ function createLogoOverlay(): Buffer {
           <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.7" />
         </filter>
       </defs>
-      ${createTextPath("JINTA", {
-        x: 0,
-        y: 50,
-        fontSize: 44,
-        fill: "white",
-        stroke: "#000000",
-        strokeWidth: 2.5,
-      })}
+      ${createTextPath("JINTA", { x: 0, y: 50, fontSize: 44, fill: "white" })}
     </svg>
   `;
   return Buffer.from(svg);
@@ -220,7 +204,7 @@ function createLogoOverlay(): Buffer {
 function createBigLogoOverlay(): Buffer {
   const svg = `
     <svg width="500" height="120" xmlns="http://www.w3.org/2000/svg">
-      ${createCenteredTextPath("JINTA", 500, 90, 100, "white", "#000000", 4)}
+      ${createCenteredTextPath("JINTA", 500, 90, 100, "white")}
     </svg>
   `;
   return Buffer.from(svg);
@@ -237,7 +221,7 @@ function createHookTextOverlay(hookText: string): Buffer {
   const textLines = lines
     .map((line, i) => {
       const yPos = padding + fontSize + (i * lineHeight) - 10;
-      return createCenteredTextPath(line, svgWidth, yPos, fontSize, "#ffffff", "#000000", 5);
+      return createCenteredTextPath(line, svgWidth, yPos, fontSize, "#ffffff");
     })
     .join("\n");
 
@@ -270,7 +254,7 @@ function createCtaHeadingOverlay(text: string): Buffer {
   const textLines = lines
     .map((line, i) => {
       const yPos = startY + (i * lineHeight);
-      return createCenteredTextPath(line, SLIDE_WIDTH, yPos, fontSize, "white", "#000000", 4);
+      return createCenteredTextPath(line, SLIDE_WIDTH, yPos, fontSize, "white");
     })
     .join("\n");
 
@@ -288,7 +272,7 @@ function createCtaHeadingOverlay(text: string): Buffer {
 function createCtaSubtextOverlay(text: string): Buffer {
   const svg = `
     <svg width="${SLIDE_WIDTH}" height="80" viewBox="0 0 ${SLIDE_WIDTH} 80" xmlns="http://www.w3.org/2000/svg">
-      ${createCenteredTextPath(text, SLIDE_WIDTH, 50, 32, "#D4AF37", "#000000", 2)}
+      ${createCenteredTextPath(text, SLIDE_WIDTH, 50, 32, "#D4AF37")}
     </svg>
   `;
   return Buffer.from(svg);
@@ -297,7 +281,7 @@ function createCtaSubtextOverlay(text: string): Buffer {
 function createCtaOverlay(text: string): Buffer {
   const svg = `
     <svg width="${SLIDE_WIDTH}" height="80" viewBox="0 0 ${SLIDE_WIDTH} 80" xmlns="http://www.w3.org/2000/svg">
-      ${createCenteredTextPath(text, SLIDE_WIDTH, 40, 26, "white", "#000000", 2)}
+      ${createCenteredTextPath(text, SLIDE_WIDTH, 40, 26, "white")}
     </svg>
   `;
   return Buffer.from(svg);

@@ -110,7 +110,7 @@ export async function runFullResearchCycle() {
   console.log(`[Master Librarian] ✅ Cycle Complete in ${elapsed}s. Swarm is grounded.`);
 }
 
-// Support CLI execution
-if (require.main === module) {
-  runFullResearchCycle().catch(console.error);
-}
+runFullResearchCycle().catch((err) => {
+  console.error("Master Librarian crashed:", err);
+  process.exit(1);
+});

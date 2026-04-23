@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { brainstormHooks, judgeDrafts, JudgeResult, DraftSequence } from "./gemini";
 import { fetchPortraitPhotos } from "./pexels";
 import { compositeSlide, compositeCtaSlide } from "./compositor";
@@ -94,7 +95,12 @@ export async function runAutopilotPipeline(keyword: string): Promise<Orchestrato
   });
 
   // Step 4: Save to Vault, Zip, and Push to Telegram
-  const vaultPath = await saveToApprovedVault(keyword, winningDraft.angle, generatedSlides, evaluation);
+  let vaultPath: string | null = null;
+  try {
+    vaultPath = await saveToApprovedVault(keyword, winningDraft.angle, generatedSlides, evaluation);
+  } catch (err) {
+    console.error(`[Orchestrator] Failed to persist vault batch:`, err);
+  }
   
   // Fetch matching music
   let audioUrl: string | undefined;
@@ -110,16 +116,30 @@ export async function runAutopilotPipeline(keyword: string): Promise<Orchestrato
     name: `slide_${i + 1}_${s.role}.png`,
     base64: s.imageBase64.replace(/^data:image\/png;base64,/, "")
   }));
-  const zipPath = await createBatchZip(vaultPath, base64Files, audioUrl);
+
+  let zipPath: string | null = null;
+  if (vaultPath) {
+    try {
+      zipPath = await createBatchZip(vaultPath, base64Files, audioUrl);
+    } catch (err) {
+      console.error(`[Orchestrator] Failed to create ZIP:`, err);
+    }
+  }
 
   // Send to Telegram HITL
-  await sendApprovalRequest(
-    path.basename(vaultPath),
-    zipPath,
-    winningDraft.angle,
-    evaluation.score,
-    evaluation.critique
-  );
+  if (vaultPath && zipPath) {
+    try {
+      await sendApprovalRequest(
+        path.basename(vaultPath),
+        zipPath,
+        winningDraft.angle,
+        evaluation.score,
+        evaluation.critique
+      );
+    } catch (err) {
+      console.error(`[Orchestrator] Failed to send Telegram approval:`, err);
+    }
+  }
 
 
   
@@ -138,7 +158,7 @@ export async function runAutopilotPipeline(keyword: string): Promise<Orchestrato
  * Returns the absolute path of the created folder.
  */
 function saveToApprovedVault(keyword: string, angle: string, slides: GeneratedSlide[], evaluation: JudgeResult): string {
-  const vaultDir = path.join(process.cwd(), "_approved_vault");
+  const vaultDir = getApprovedVaultRoot();
   if (!fs.existsSync(vaultDir)) {
     fs.mkdirSync(vaultDir, { recursive: true });
   }
@@ -147,7 +167,7 @@ function saveToApprovedVault(keyword: string, angle: string, slides: GeneratedSl
   const folderName = `${keyword.replace(/\s+/g, "-")}_${scoreStr(evaluation.score)}_${timestamp}`;
   const savePath = path.join(vaultDir, folderName);
   
-  fs.mkdirSync(savePath);
+  fs.mkdirSync(savePath, { recursive: true });
 
   // Write images
   slides.forEach((slide, index) => {
@@ -167,6 +187,19 @@ function saveToApprovedVault(keyword: string, angle: string, slides: GeneratedSl
 
   console.log(`[Orchestrator] Saved batch to ${savePath}`);
   return savePath;
+}
+
+function getApprovedVaultRoot(): string {
+  const customVaultRoot = process.env.JINTA_VAULT_ROOT;
+  if (customVaultRoot) {
+    return customVaultRoot;
+  }
+
+  if (process.env.VERCEL) {
+    return path.join(os.tmpdir(), "jinta-approved-vault");
+  }
+
+  return path.join(process.cwd(), "_approved_vault");
 }
 
 function scoreStr(score: number) {
