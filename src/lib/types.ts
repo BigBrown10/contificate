@@ -64,10 +64,24 @@ export interface GenerateRequest {
   count: number;
 }
 
-export interface GenerateResponse {
-  slides: GeneratedSlide[];
+export interface GenerationPlan {
   keyword: string;
+  winningAngle: string;
+  storySlides: StorySlide[];
+  photos: {
+    url: string;
+    photographer: string;
+  }[];
+  musicTrack: FreesoundTrack | null;
   generatedAt: string;
+  hookSource: string;
+}
+
+export interface GenerateResponse {
+  plan?: GenerationPlan;
+  slides?: GeneratedSlide[];
+  keyword?: string;
+  generatedAt?: string;
   hookSource?: "gemini" | "fallback";
   musicTrack?: FreesoundTrack | null;
 }
@@ -75,4 +89,10 @@ export interface GenerateResponse {
 export interface GenerateError {
   error: string;
   details?: string;
+}
+
+export interface JudgeResult {
+  bestDraftIndex: number;
+  score: number;
+  critique: string;
 }
