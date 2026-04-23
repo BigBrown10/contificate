@@ -3,7 +3,6 @@ import path from "path";
 import { brainstormHooks, judgeDrafts, JudgeResult, DraftSequence } from "./gemini";
 import { fetchPortraitPhotos } from "./pexels";
 import { compositeSlide, compositeCtaSlide } from "./compositor";
-import { postTikTokCarousel } from "./ayrshare";
 import { GeneratedSlide, CTA_SLIDE_TEXT, CTA_SLIDE_SUBTEXT } from "./types";
 import { fetchMusicTracks, FreesoundTrack } from "./freesound";
 import { createBatchZip } from "./archive";
