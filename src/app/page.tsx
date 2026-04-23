@@ -389,6 +389,18 @@ export default function Home() {
     return `${m}m ${s}s`;
   };
 
+  const handleRunLibrarian = async () => {
+    try {
+      setLoadingMessage("Waking up the Librarian...");
+      const res = await fetch("/api/swarm/research", { method: "POST" });
+      if (res.ok) {
+        await fetchSwarmState();
+      }
+    } catch (err) {
+      console.error("Failed to run librarian:", err);
+    }
+  };
+
   return (
     <div className="app-container">
       <AutomationSettingsModal 
@@ -398,18 +410,6 @@ export default function Home() {
         onSave={setAutoSettings}
       />
       
-      {/* Intelligence Sidebar / Swarm Header */}
-      <div className="swarm-header animate-in">
-        <div className="swarm-pill">
-          <div className="pulse-green" />
-          <span>Swarm Active (GitHub Shadow)</span>
-        </div>
-        <div className="swarm-metrics">
-          <span>Insights: <strong>{insights.length}</strong></span>
-          <span>Deployments: <strong>{history.length}</strong></span>
-        </div>
-      </div>
-
       <header className="header">
         <div className="header-brand">
           <span className="header-logo">JINTA</span>
@@ -759,17 +759,32 @@ export default function Home() {
 
       {/* Swarm Intelligence Section */}
       <section className="swarm-intelligence-section animate-in">
-        <div className="section-header">
-          <h2 className="section-title">🧠 Swarm Intelligence</h2>
-          <button className="btn-refresh" onClick={fetchSwarmState} disabled={intelligenceLoading}>
-            {intelligenceLoading ? "Updating..." : "↻ Refresh Vault"}
-          </button>
+        <div className="swarm-header">
+          <div className="swarm-pill">
+            <div className="pulse-green"></div>
+            <span>Shadow Swarm Online</span>
+          </div>
+          <div className="swarm-metrics">
+            <span>Market Intelligence: <strong>{insights.length}</strong></span>
+            <span>Autonomous Batches: <strong>{history.length}</strong></span>
+          </div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button className="btn-refresh" onClick={fetchSwarmState} disabled={intelligenceLoading}>
+              {intelligenceLoading ? "Updating..." : "↻ Sync Vault"}
+            </button>
+            <button className="btn-generate" style={{ padding: '8px 20px', fontSize: '13px' }} onClick={handleRunLibrarian}>
+              ⚡ Wake Librarian
+            </button>
+          </div>
         </div>
 
         <div className="intelligence-grid">
           {/* Research Vault */}
           <div className="intelligence-card">
-            <h3 className="card-title">Latest Reddit/Web Insights</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 className="card-title" style={{ margin: 0 }}>Social Listening Vault</h3>
+              <span className="insight-tag">Real-time</span>
+            </div>
             <div className="insight-list">
               {insights.length === 0 ? (
                 <p className="empty-mini">No research gathered yet. Wake up the Shadow Librarian.</p>
