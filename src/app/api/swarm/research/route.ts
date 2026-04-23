@@ -18,16 +18,16 @@ export async function POST(request: NextRequest) {
     Research Topic: "${topic}"
 
     The Mandate: 
-    Go deep into the subculture. Identify 3 raw, visceral human insights or recurring pain points mentioned in addiction recovery communities.
+    Identify 3 raw, visceral human insights. 
+    One from REDDIT, one from YOUTUBE transcripts, and one from deep WEB articles.
     
     The Prompt: 
-    Simulate a search through recovery forums and subreddits. 
-    Capture the grit. Find the "2am thoughts" — things people only admit when they are at their lowest.
-    NO COACHING SPEAK. Give me raw human data.
+    Simulate a search through these platforms. Find the "2am thoughts".
+    Provide a realistic SOURCE URL for each insight (e.g. to a specific subreddit or a YouTube search for that topic).
     
     Format: Return as a JSON array of objects:
     [
-      { "type": "reddit", "content": "Thread context", "insight": "The visceral human insight" },
+      { "type": "reddit" | "youtube" | "article", "content": "Thread/Video context", "insight": "The visceral human insight", "url": "https://..." },
       ...
     ]`;
 
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     // 3. Save to Supabase (Persistence)
     for (const item of insights) {
-      await saveResearch(item.type || "reddit", item.content, item.insight);
+      await saveResearch(item.type || "reddit", item.content, item.insight, item.url);
     }
 
     return NextResponse.json({ success: true, message: `Librarian has synchronized ${insights.length} visceral insights on "${topic}".` });

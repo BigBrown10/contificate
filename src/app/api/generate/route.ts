@@ -5,6 +5,7 @@ import { compositeSlide, compositeCtaSlide } from "@/lib/compositor";
 import { CTA_SLIDE_TEXT, CTA_SLIDE_SUBTEXT, GeneratedSlide, GenerateResponse, GenerateError } from "@/lib/types";
 import { brainstormHooks, judgeDrafts } from "@/lib/gemini";
 import { fetchMusicTracks } from "@/lib/freesound";
+import { supabase } from "@/lib/supabase";
 
 export const maxDuration = 60; // Allow up to 60s for batch processing
 
@@ -21,9 +22,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Generate story hooks via Gemini 2.0 (High-IQ Narrative Engine)
+    // --- AGENTIC FEEDBACK LOOP: Inject Research Context ---
+    const { data: insights } = await supabase
+      .from("research_vault")
+      .select("key_insight")
+      .order("created_at", { ascending: false })
+      .limit(3);
+    
+    const researchContext = insights && insights.length > 0 
+      ? insights.map(i => `- ${i.key_insight}`).join("\n")
+      : "";
+
+    // 1. Generate story hooks via Gemini 2.5 (High-IQ Narrative Engine)
     const storyTargetCount = count - 1; // Subtract 1 for the mandatory CTA slide
-    const drafts = await brainstormHooks(keyword, storyTargetCount);
+    const drafts = await brainstormHooks(keyword, storyTargetCount, researchContext);
     const evaluation = await judgeDrafts(drafts);
     
     if (evaluation.bestDraftIndex === -1) {

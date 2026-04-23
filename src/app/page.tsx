@@ -793,7 +793,14 @@ export default function Home() {
                   <div key={i.id} className="insight-item">
                     <span className="insight-tag">{i.source_type}</span>
                     <p className="insight-text">{i.key_insight}</p>
-                    <a href={i.source_url} target="_blank" className="insight-link text-xs">View Source →</a>
+                    <a 
+                      href={i.source_url || `https://www.google.com/search?q=${encodeURIComponent(i.key_insight)}`} 
+                      target="_blank" 
+                      className="insight-link"
+                      style={{ color: '#00ccff', textDecoration: 'underline', fontSize: '11px', marginTop: '8px', display: 'inline-block' }}
+                    >
+                      View Source →
+                    </a>
                   </div>
                 ))
               )}

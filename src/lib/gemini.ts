@@ -55,8 +55,10 @@ export interface DraftSequence {
  * SHOT 1: The Brainstormer
  * Takes a broad keyword, researches trendy angles, and generates 3 distinct story arcs.
  */
-export async function brainstormHooks(keyword: string, storyCount: number = 6): Promise<DraftSequence[]> {
+export async function brainstormHooks(keyword: string, storyCount: number = 6, researchContext: string = ""): Promise<DraftSequence[]> {
   const prompt = `Your task: Take the broad keyword "${keyword}" and frame it EXCLUSIVELY through the lens of BREAKING CORN ADDICTION. 
+
+  ${researchContext ? `GROUNDING DATA (Use these real-world insights from the vault): \n${researchContext}` : ""}
 
 The Persona: 
 You are the world's most elite copywriter, working for JINTA, a brand dedicated to one mission: Saving men from the corn loop. You write with the grit of a Nike campaign and the investigative depth of Forbes. You are visceral, raw, and direct.
