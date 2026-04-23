@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import * as opentype from "opentype.js";
 import sharp from "sharp";
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CTA_SLIDE_SUBTEXT } from "./types";
 
@@ -10,7 +11,13 @@ const INTER_FONT_WOFF_PATH = path.join(
   "Inter-Bold.woff"
 );
 
-const INTER_FONT_DATA = fs.readFileSync(INTER_FONT_WOFF_PATH, "base64");
+const INTER_FONT_BUFFER = fs.readFileSync(INTER_FONT_WOFF_PATH);
+const INTER_FONT = opentype.parse(
+  INTER_FONT_BUFFER.buffer.slice(
+    INTER_FONT_BUFFER.byteOffset,
+    INTER_FONT_BUFFER.byteOffset + INTER_FONT_BUFFER.byteLength
+  )
+);
 
 /**
  * JINTA Slide Compositor
@@ -124,29 +131,54 @@ function createGradientOverlay(): Buffer {
   return Buffer.from(svg);
 }
 
-function createTextStyle(): Buffer {
-  const svg = `
-    <style>
-      @font-face {
-        font-family: "JintaInter";
-        src: url("data:font/woff;base64,${INTER_FONT_DATA}") format("woff");
-        font-style: normal;
-        font-weight: 700;
-      }
+interface TextPathOptions {
+  x: number;
+  y: number;
+  fontSize: number;
+  fill: string;
+  stroke?: string;
+  strokeWidth?: number;
+  opacity?: number;
+}
 
-      .jinta-text {
-        font-family: "JintaInter", sans-serif;
-        font-weight: 700;
-        stroke: #000000;
-        stroke-opacity: 0.55;
-        stroke-width: 5px;
-        paint-order: stroke fill;
-        stroke-linejoin: round;
-      }
-    </style>
-  `;
+function createTextPath(text: string, options: TextPathOptions): string {
+  const path = INTER_FONT.getPath(text, options.x, options.y, options.fontSize, {
+    kerning: true,
+  });
+  const attributes = [
+    `d="${path.toPathData({ optimize: true, decimalPlaces: 2 })}"`,
+    `fill="${options.fill}"`,
+    options.stroke ? `stroke="${options.stroke}"` : null,
+    options.strokeWidth ? `stroke-width="${options.strokeWidth}"` : null,
+    options.opacity !== undefined ? `opacity="${options.opacity}"` : null,
+    options.stroke ? `stroke-linejoin="round"` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
-  return Buffer.from(svg);
+  return `<path ${attributes} />`;
+}
+
+function createCenteredTextPath(
+  text: string,
+  width: number,
+  baselineY: number,
+  fontSize: number,
+  fill: string,
+  stroke = "#000000",
+  strokeWidth = 4
+): string {
+  const textWidth = INTER_FONT.getAdvanceWidth(text, fontSize, { kerning: true });
+  const x = (width - textWidth) / 2;
+
+  return createTextPath(text, {
+    x,
+    y: baselineY,
+    fontSize,
+    fill,
+    stroke,
+    strokeWidth,
+  });
 }
 
 /**
@@ -164,19 +196,19 @@ function createFullDarkOverlay(): Buffer {
 function createLogoOverlay(): Buffer {
   const svg = `
     <svg width="240" height="70" xmlns="http://www.w3.org/2000/svg">
-      ${createTextStyle().toString()}
       <defs>
         <filter id="logoShadow" x="-20%" y="-20%" width="140%" height="140%">
           <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.7" />
         </filter>
       </defs>
-      <text
-        class="jinta-text"
-        x="0"
-        y="50"
-        font-size="44"
-        fill="white"
-      >JINTA</text>
+      ${createTextPath("JINTA", {
+        x: 0,
+        y: 50,
+        fontSize: 44,
+        fill: "white",
+        stroke: "#000000",
+        strokeWidth: 2.5,
+      })}
     </svg>
   `;
   return Buffer.from(svg);
@@ -188,15 +220,7 @@ function createLogoOverlay(): Buffer {
 function createBigLogoOverlay(): Buffer {
   const svg = `
     <svg width="500" height="120" xmlns="http://www.w3.org/2000/svg">
-      ${createTextStyle().toString()}
-      <text
-        class="jinta-text"
-        x="250"
-        y="90"
-        font-size="100"
-        fill="white"
-        text-anchor="middle"
-      >JINTA</text>
+      ${createCenteredTextPath("JINTA", 500, 90, 100, "white", "#000000", 4)}
     </svg>
   `;
   return Buffer.from(svg);
@@ -209,20 +233,13 @@ function createHookTextOverlay(hookText: string): Buffer {
   const padding = 60;
   const boxHeight = (lines.length * lineHeight) + (padding * 2);
   const svgWidth = SLIDE_WIDTH;
-  
-  // Render each line as a separate ATOMIC text element for maximum Vercel compatibility
-  const textLines = lines.map((line, i) => {
-    const yPos = padding + fontSize + (i * lineHeight) - 10;
-    return `
-      <text
-        class="jinta-text"
-        x="${svgWidth / 2}"
-        y="${yPos}"
-        font-size="${fontSize}"
-        fill="#ffffff"
-        text-anchor="middle"
-      >${escapeXml(line)}</text>`;
-  }).join("\n");
+
+  const textLines = lines
+    .map((line, i) => {
+      const yPos = padding + fontSize + (i * lineHeight) - 10;
+      return createCenteredTextPath(line, svgWidth, yPos, fontSize, "#ffffff", "#000000", 5);
+    })
+    .join("\n");
 
   const svg = `
     <svg 
@@ -231,7 +248,6 @@ function createHookTextOverlay(hookText: string): Buffer {
       viewBox="0 0 ${svgWidth} ${boxHeight}" 
       xmlns="http://www.w3.org/2000/svg"
     >
-      ${createTextStyle().toString()}
       <!-- High-Prestige Cinematic Shadow Box -->
       <rect x="0" y="0" width="${svgWidth}" height="${boxHeight}" fill="#000000" fill-opacity="0.6" />
       ${textLines}
@@ -251,14 +267,15 @@ function createCtaHeadingOverlay(text: string): Buffer {
   const totalTextHeight = lines.length * lineHeight;
   const startY = (svgHeight - totalTextHeight) / 2 + fontSize;
 
-  const textLines = lines.map((line, i) => {
-    const yPos = startY + (i * lineHeight);
-    return `<text class="jinta-text" x="${SLIDE_WIDTH / 2}" y="${yPos}" font-size="${fontSize}" fill="white" text-anchor="middle">${escapeXml(line)}</text>`;
-  }).join("\n");
+  const textLines = lines
+    .map((line, i) => {
+      const yPos = startY + (i * lineHeight);
+      return createCenteredTextPath(line, SLIDE_WIDTH, yPos, fontSize, "white", "#000000", 4);
+    })
+    .join("\n");
 
   const svg = `
     <svg width="${SLIDE_WIDTH}" height="${svgHeight}" viewBox="0 0 ${SLIDE_WIDTH} ${svgHeight}" xmlns="http://www.w3.org/2000/svg">
-      ${createTextStyle().toString()}
       ${textLines}
     </svg>
   `;
@@ -271,15 +288,7 @@ function createCtaHeadingOverlay(text: string): Buffer {
 function createCtaSubtextOverlay(text: string): Buffer {
   const svg = `
     <svg width="${SLIDE_WIDTH}" height="80" viewBox="0 0 ${SLIDE_WIDTH} 80" xmlns="http://www.w3.org/2000/svg">
-      ${createTextStyle().toString()}
-      <text
-        class="jinta-text"
-        x="${SLIDE_WIDTH / 2}"
-        y="50"
-        font-size="32"
-        fill="#D4AF37"
-        text-anchor="middle"
-      >${escapeXml(text)}</text>
+      ${createCenteredTextPath(text, SLIDE_WIDTH, 50, 32, "#D4AF37", "#000000", 2)}
     </svg>
   `;
   return Buffer.from(svg);
@@ -288,16 +297,7 @@ function createCtaSubtextOverlay(text: string): Buffer {
 function createCtaOverlay(text: string): Buffer {
   const svg = `
     <svg width="${SLIDE_WIDTH}" height="80" viewBox="0 0 ${SLIDE_WIDTH} 80" xmlns="http://www.w3.org/2000/svg">
-      ${createTextStyle().toString()}
-      <text
-        class="jinta-text"
-        x="${SLIDE_WIDTH / 2}"
-        y="40"
-        font-size="26"
-        fill="white"
-        text-anchor="middle"
-        opacity="0.85"
-      >${escapeXml(text)}</text>
+      ${createCenteredTextPath(text, SLIDE_WIDTH, 40, 26, "white", "#000000", 2)}
     </svg>
   `;
   return Buffer.from(svg);
