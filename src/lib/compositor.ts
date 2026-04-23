@@ -1,5 +1,16 @@
+import fs from "fs";
+import path from "path";
 import sharp from "sharp";
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CTA_SLIDE_SUBTEXT } from "./types";
+
+const INTER_FONT_WOFF_PATH = path.join(
+  process.cwd(),
+  "public",
+  "fonts",
+  "Inter-Bold.woff"
+);
+
+const INTER_FONT_DATA = fs.readFileSync(INTER_FONT_WOFF_PATH, "base64");
 
 /**
  * JINTA Slide Compositor
@@ -113,6 +124,31 @@ function createGradientOverlay(): Buffer {
   return Buffer.from(svg);
 }
 
+function createTextStyle(): Buffer {
+  const svg = `
+    <style>
+      @font-face {
+        font-family: "JintaInter";
+        src: url("data:font/woff;base64,${INTER_FONT_DATA}") format("woff");
+        font-style: normal;
+        font-weight: 700;
+      }
+
+      .jinta-text {
+        font-family: "JintaInter", sans-serif;
+        font-weight: 700;
+        stroke: #000000;
+        stroke-opacity: 0.55;
+        stroke-width: 5px;
+        paint-order: stroke fill;
+        stroke-linejoin: round;
+      }
+    </style>
+  `;
+
+  return Buffer.from(svg);
+}
+
 /**
  * Full dark overlay for CTA slide — 75% opacity everywhere.
  */
@@ -128,17 +164,17 @@ function createFullDarkOverlay(): Buffer {
 function createLogoOverlay(): Buffer {
   const svg = `
     <svg width="240" height="70" xmlns="http://www.w3.org/2000/svg">
+      ${createTextStyle().toString()}
       <defs>
         <filter id="logoShadow" x="-20%" y="-20%" width="140%" height="140%">
           <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.7" />
         </filter>
       </defs>
       <text
+        class="jinta-text"
         x="0"
         y="50"
-        font-family="DejaVu Sans, Ubuntu, sans-serif"
         font-size="44"
-        font-weight="bold"
         fill="white"
       >JINTA</text>
     </svg>
@@ -152,12 +188,12 @@ function createLogoOverlay(): Buffer {
 function createBigLogoOverlay(): Buffer {
   const svg = `
     <svg width="500" height="120" xmlns="http://www.w3.org/2000/svg">
+      ${createTextStyle().toString()}
       <text
+        class="jinta-text"
         x="250"
         y="90"
-        font-family="DejaVu Sans, Ubuntu, sans-serif"
         font-size="100"
-        font-weight="bold"
         fill="white"
         text-anchor="middle"
       >JINTA</text>
@@ -179,11 +215,10 @@ function createHookTextOverlay(hookText: string): Buffer {
     const yPos = padding + fontSize + (i * lineHeight) - 10;
     return `
       <text
+        class="jinta-text"
         x="${svgWidth / 2}"
         y="${yPos}"
-        font-family="Ubuntu, DejaVu Sans, Helvetica, Arial, sans-serif"
         font-size="${fontSize}"
-        font-weight="bold"
         fill="#ffffff"
         text-anchor="middle"
       >${escapeXml(line)}</text>`;
@@ -196,6 +231,7 @@ function createHookTextOverlay(hookText: string): Buffer {
       viewBox="0 0 ${svgWidth} ${boxHeight}" 
       xmlns="http://www.w3.org/2000/svg"
     >
+      ${createTextStyle().toString()}
       <!-- High-Prestige Cinematic Shadow Box -->
       <rect x="0" y="0" width="${svgWidth}" height="${boxHeight}" fill="#000000" fill-opacity="0.6" />
       ${textLines}
@@ -217,11 +253,12 @@ function createCtaHeadingOverlay(text: string): Buffer {
 
   const textLines = lines.map((line, i) => {
     const yPos = startY + (i * lineHeight);
-    return `<text x="${SLIDE_WIDTH / 2}" y="${yPos}" font-family="DejaVu Sans, Ubuntu, sans-serif" font-size="${fontSize}" font-weight="bold" fill="white" text-anchor="middle">${escapeXml(line)}</text>`;
+    return `<text class="jinta-text" x="${SLIDE_WIDTH / 2}" y="${yPos}" font-size="${fontSize}" fill="white" text-anchor="middle">${escapeXml(line)}</text>`;
   }).join("\n");
 
   const svg = `
     <svg width="${SLIDE_WIDTH}" height="${svgHeight}" viewBox="0 0 ${SLIDE_WIDTH} ${svgHeight}" xmlns="http://www.w3.org/2000/svg">
+      ${createTextStyle().toString()}
       ${textLines}
     </svg>
   `;
@@ -234,12 +271,12 @@ function createCtaHeadingOverlay(text: string): Buffer {
 function createCtaSubtextOverlay(text: string): Buffer {
   const svg = `
     <svg width="${SLIDE_WIDTH}" height="80" viewBox="0 0 ${SLIDE_WIDTH} 80" xmlns="http://www.w3.org/2000/svg">
+      ${createTextStyle().toString()}
       <text
+        class="jinta-text"
         x="${SLIDE_WIDTH / 2}"
         y="50"
-        font-family="DejaVu Sans, Ubuntu, sans-serif"
         font-size="32"
-        font-weight="bold"
         fill="#D4AF37"
         text-anchor="middle"
       >${escapeXml(text)}</text>
@@ -251,12 +288,12 @@ function createCtaSubtextOverlay(text: string): Buffer {
 function createCtaOverlay(text: string): Buffer {
   const svg = `
     <svg width="${SLIDE_WIDTH}" height="80" viewBox="0 0 ${SLIDE_WIDTH} 80" xmlns="http://www.w3.org/2000/svg">
+      ${createTextStyle().toString()}
       <text
+        class="jinta-text"
         x="${SLIDE_WIDTH / 2}"
         y="40"
-        font-family="DejaVu Sans, Ubuntu, sans-serif"
         font-size="26"
-        font-weight="bold"
         fill="white"
         text-anchor="middle"
         opacity="0.85"
