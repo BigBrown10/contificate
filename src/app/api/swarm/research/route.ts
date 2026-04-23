@@ -13,42 +13,45 @@ export async function POST(request: NextRequest) {
     const topics = ["NoFap benefits", "porn addiction recovery", "discipline habits"];
     const topic = topics[Math.floor(Math.random() * topics.length)];
 
-    // 2. Use Gemini to synthesize "Virtual Social Listening"
-    // Since Playwright doesn't run on Vercel, we use Gemini to 'simulate' 
-    // real-time research threads from the communities.
-    const prompt = `Persona: You are the Shadow Librarian for JINTA.
+    // 2. Use Gemini 2.5 Flash for high-authority market synthesis
+    const prompt = `Persona: You are the ELITE Shadow Librarian for JINTA.
     Research Topic: "${topic}"
 
-    Your task:
+    The Mandate: 
+    Go deep into the subculture. Identify 3 raw, visceral human insights or recurring pain points mentioned in addiction recovery communities.
+    
+    The Prompt: 
     Simulate a search through recovery forums and subreddits. 
-    Identify 3 distinct, VICERAL human insights. 
-    Each insight must feel like a real person's quote or a discovery made in a 2am thread.
+    Capture the grit. Find the "2am thoughts" — things people only admit when they are at their lowest.
+    NO COACHING SPEAK. Give me raw human data.
     
     Format: Return as a JSON array of objects:
     [
-      { "type": "reddit", "content": "Thread description", "insight": "The core insight" },
+      { "type": "reddit", "content": "Thread context", "insight": "The visceral human insight" },
       ...
     ]`;
 
-    const result = await brainstormHooks(topic, 1); // We can reuse brainstorm logic or a direct call
-    // Actually, I'll just use a direct lightweight fetch to Gemini here for extreme reliability
+    // Direct elite client initialization
     const genAI = (await import("@google/generative-ai")).GoogleGenerativeAI;
     const client = new genAI(process.env.GEMINI_API_KEY || "");
-    const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = client.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const genResult = await model.generateContent({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: "application/json" }
+        generationConfig: { 
+          responseMimeType: "application/json",
+          temperature: 0.1 // Precision over creativity for research
+        }
     });
 
     const insights = JSON.parse(genResult.response.text());
 
-    // 3. Save to Supabase
+    // 3. Save to Supabase (Persistence)
     for (const item of insights) {
       await saveResearch(item.type || "reddit", item.content, item.insight);
     }
 
-    return NextResponse.json({ success: true, message: `Librarian has updated the vault with 3 new insights on "${topic}".` });
+    return NextResponse.json({ success: true, message: `Librarian has synchronized ${insights.length} visceral insights on "${topic}".` });
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Research failed";
