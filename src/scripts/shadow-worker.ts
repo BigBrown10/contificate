@@ -67,7 +67,7 @@ async function runShadowCycle() {
         targetKeyword,
         result.angle || "Experimental",
         result.slides || [],
-        { score: result.score || 0, critique: result.critique || "" },
+        { bestDraftIndex: 0, score: result.score || 0, critique: result.critique || "" },
         publicUrl
       );
       console.log(`[ShadowWorker] Cycle Successful! Public URL: ${publicUrl}`);
