@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+export const dynamic = "force-dynamic";
 import { compositeSlide, compositeCtaSlide } from "@/lib/compositor";
 import { CTA_SLIDE_TEXT, CTA_SLIDE_SUBTEXT } from "@/lib/types";
 

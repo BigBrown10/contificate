@@ -1,9 +1,12 @@
-import { chromium } from "playwright-extra";
-import stealth from "puppeteer-extra-plugin-stealth";
+
+async function getChromium() {
+  const { chromium } = await import("playwright-extra");
+  const stealth = (await import("puppeteer-extra-plugin-stealth")).default;
+  chromium.use(stealth());
+  return chromium;
+}
 import fs from "fs";
 import path from "path";
-
-chromium.use(stealth());
 
 export async function uploadToTikTok(
   slidePaths: string[],
@@ -14,12 +17,11 @@ export async function uploadToTikTok(
   if (!fs.existsSync(STATE_FILE)) {
     throw new Error("Missing tiktok_state.json. Please run 'node src/scripts/tiktok-session.mjs' first.");
   }
-
-  console.log("🚀 Booting Playwright TikTok Automator...");
   
+  const chromium = await getChromium();
   const browser = await chromium.launch({
-    headless: false, // Keep false at first to avoid immediate bot detection, or if they want to see it
-    args: ["--disable-blink-features=AutomationControlled", "--window-position=0,0", "--window-size=1280,720"]
+    headless: true, // Auto-set true for serverless/worker environments
+    args: ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-setuid-sandbox"]
   });
 
   const context = await browser.newContext({
