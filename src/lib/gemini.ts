@@ -32,6 +32,7 @@ const brainstormerSchema: Schema = {
             },
             role: {
               type: SchemaType.STRING,
+              format: "enum",
               enum: ["hook", "problem", "deepen", "shift", "insight", "action"],
               description: "The narrative role of this slide."
             }
