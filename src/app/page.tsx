@@ -50,6 +50,7 @@ export default function Home() {
   const [generatedKeyword, setGeneratedKeyword] = useState("");
   const [generationTime, setGenerationTime] = useState(0);
   const [hookSource, setHookSource] = useState<"gemini" | "fallback" | null>(null);
+  const [researchSources, setResearchSources] = useState<any[]>([]); // Attribution
   const [autopilotResult, setAutopilotResult] = useState<{
     score?: number;
     critique?: string;
@@ -154,6 +155,7 @@ export default function Home() {
       }
 
       const { plan } = await planResponse.json();
+      setResearchSources(plan.researchSources || []);
       const startTime = Date.now();
 
       setGeneratedKeyword(plan.keyword);
@@ -616,6 +618,41 @@ export default function Home() {
                 <span style={{ color: '#a1a1aa' }}>Judge's Critique:</span> "{autopilotResult.critique}"
               </p>
               <p style={{ margin: "0", fontSize: '13px', color: '#a1a1aa' }}>{autopilotResult.message}</p>
+            </div>
+          )}
+
+          {slides.length > 0 && researchSources.length > 0 && (
+            <div className="grounding-info animate-in" style={{ 
+              background: 'rgba(255,255,255,0.03)', 
+              border: '1px solid rgba(255,255,255,0.05)', 
+              borderRadius: '8px', 
+              padding: '16px', 
+              marginBottom: '24px' 
+            }}>
+              <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                🧠 Intelligence Grounding
+              </h4>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {researchSources.map((s, idx) => (
+                  <a 
+                    key={idx} 
+                    href={s.source_url} 
+                    target="_blank" 
+                    className="insight-pill"
+                    style={{ 
+                      fontSize: '11px', 
+                      background: 'rgba(0,204,255,0.1)', 
+                      color: '#00ccff', 
+                      padding: '4px 10px', 
+                      borderRadius: '20px',
+                      textDecoration: 'none',
+                      border: '1px solid rgba(0,204,255,0.2)'
+                    }}
+                  >
+                    {s.source_type.toUpperCase()}: {s.key_insight.slice(0, 40)}...
+                  </a>
+                ))}
+              </div>
             </div>
           )}
 

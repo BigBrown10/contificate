@@ -1,0 +1,26 @@
+name: Shadow Librarian Swarm
+
+on:
+  schedule:
+    - cron: '0 0,8,16 * * *' # 3 times a day
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Master Librarian
+        run: npx tsx src/scripts/researcher.ts
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

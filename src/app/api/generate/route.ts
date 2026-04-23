@@ -15,26 +15,34 @@ export async function POST(request: NextRequest) {
     const keyword: string = body.keyword?.trim();
     const count: number = Math.min(Math.max(body.count || 5, 2), 20);
 
-    if (!keyword) {
-      return NextResponse.json(
-        { error: "Keyword is required." } as GenerateError,
-        { status: 400 }
-      );
-    }
+    // --- AGENTIC FEEDBACK LOOP: Surgical Keyword Retrieval ---
+    // Clean keyword for better matching (e.g. "Dopamine" instead of "Dopamine addiction")
+    const searchTerms = keyword.split(" ")[0].trim();
 
-    // --- AGENTIC FEEDBACK LOOP: Inject Research Context ---
     const { data: insights } = await supabase
       .from("research_vault")
-      .select("key_insight")
+      .select("key_insight, source_url, source_type")
+      .or(`key_insight.ilike.%${searchTerms}%,content.ilike.%${searchTerms}%`)
       .order("created_at", { ascending: false })
       .limit(3);
     
-    const researchContext = insights && insights.length > 0 
-      ? insights.map(i => `- ${i.key_insight}`).join("\n")
+    // Fallback if no matching insights found -> Get absolute latest
+    let activeInsights = insights;
+    if (!insights || insights.length === 0) {
+      const { data: latest } = await supabase
+        .from("research_vault")
+        .select("key_insight, source_url, source_type")
+        .order("created_at", { ascending: false })
+        .limit(3);
+      activeInsights = latest;
+    }
+    
+    const researchContext = activeInsights && activeInsights.length > 0 
+      ? activeInsights.map(i => `[Source: ${i.source_type}] - ${i.key_insight}`).join("\n")
       : "";
 
     // 1. Generate story hooks via Gemini 2.5 (High-IQ Narrative Engine)
-    const storyTargetCount = count - 1; // Subtract 1 for the mandatory CTA slide
+    const storyTargetCount = count - 1;
     const drafts = await brainstormHooks(keyword, storyTargetCount, researchContext);
     const evaluation = await judgeDrafts(drafts);
     
@@ -75,7 +83,8 @@ export async function POST(request: NextRequest) {
         })),
         musicTrack: selectedMusic,
         generatedAt: new Date().toISOString(),
-        hookSource: "gemini"
+        hookSource: "gemini",
+        researchSources: activeInsights // Attribution
       }
     });
   } catch (err: unknown) {

@@ -46,3 +46,6 @@ scratch/
 tiktok_state.json
 **/metadata.json
 *.zip
+test-key.mjs
+*.mjs
+!next.config.mjs

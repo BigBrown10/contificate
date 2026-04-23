@@ -136,11 +136,10 @@ function createLogoOverlay(): Buffer {
       <text
         x="0"
         y="50"
-        font-family="sans-serif"
+        font-family="DejaVu Sans, sans-serif"
         font-size="44"
         font-weight="900"
         fill="white"
-        letter-spacing="8"
       >JINTA</text>
     </svg>
   `;
@@ -198,12 +197,11 @@ function createHookTextOverlay(hookText: string): Buffer {
       <text
         x="${svgWidth / 2}"
         y="${padding + fontSize - 10}"
-        font-family="sans-serif"
+        font-family="DejaVu Sans, sans-serif"
         font-size="${fontSize}"
         font-weight="900"
         fill="#ffffff"
         text-anchor="middle"
-        letter-spacing="1"
       >
         ${tspans}
       </text>

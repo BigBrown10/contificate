@@ -10,51 +10,59 @@ import { saveResearch } from "@/lib/supabase";
  */
 export async function POST(request: NextRequest) {
   try {
-    const topics = ["NoFap benefits", "porn addiction recovery", "discipline habits"];
-    const topic = topics[Math.floor(Math.random() * topics.length)];
-
-    // 2. Use Gemini 2.5 Flash for high-authority market synthesis
-    const prompt = `Persona: You are the ELITE Shadow Librarian for JINTA.
-    Research Topic: "${topic}"
-
-    The Mandate: 
-    Identify 3 raw, visceral human insights. 
-    One from REDDIT, one from YOUTUBE transcripts, and one from deep WEB articles.
+    console.log("[Librarian] Manual Trigger -> Initializing Live Extraction...");
     
-    The Prompt: 
-    Simulate a search through these platforms. Find the "2am thoughts".
-    Provide a realistic SOURCE URL for each insight (e.g. to a specific subreddit or a YouTube search for that topic).
+    // 1. Fetch REAL high-signal data from Reddit
+    const subreddits = ["pornfree", "NoFap", "getdisciplined"];
+    const sub = subreddits[Math.floor(Math.random() * subreddits.length)];
     
-    Format: Return as a JSON array of objects:
-    [
-      { "type": "reddit" | "youtube" | "article", "content": "Thread/Video context", "insight": "The visceral human insight", "url": "https://..." },
-      ...
-    ]`;
+    const redditRes = await fetch(`https://www.reddit.com/r/${sub}/top.json?t=day&limit=3`);
+    if (!redditRes.ok) throw new Error(`Reddit API failed: ${redditRes.status}`);
+    
+    const redditData = await redditRes.json();
+    const posts = redditData.data?.children || [];
 
-    // Direct elite client initialization
+    // 2. Distill RAW INSIGHTS from the live data using Gemini 2.5
     const genAI = (await import("@google/generative-ai")).GoogleGenerativeAI;
     const client = new genAI(process.env.GEMINI_API_KEY || "");
     const model = client.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-    const genResult = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { 
-          responseMimeType: "application/json",
-          temperature: 0.1 // Precision over creativity for research
+    const results = [];
+
+    for (const post of posts) {
+        const { title, selftext, url, author } = post.data;
+        
+        const prompt = `Persona: Elite Shadow Librarian for JINTA.
+        Source: Reddit (${sub})
+        Text: "${title} \n ${selftext.slice(0, 500)}"
+        
+        Task: Extract one visceral, 2am-thought level insight about their addiction struggle. 
+        Keep it raw and human. Max 2 sentences. 
+        Return ONLY the raw insight.`;
+
+        const genResult = await model.generateContent(prompt);
+        const insight = genResult.response.text().trim();
+
+        // Save to Supabase -> Normalize the URL
+        let actualUrl = url;
+        if (url.startsWith("/")) {
+          actualUrl = `https://www.reddit.com${url}`;
         }
-    });
-
-    const insights = JSON.parse(genResult.response.text());
-
-    // 3. Save to Supabase (Persistence)
-    for (const item of insights) {
-      await saveResearch(item.type || "reddit", item.content, item.insight, item.url);
+        
+        await saveResearch("reddit", `Post by u/${author} in r/${sub}`, insight, actualUrl);
+        
+        results.push({ insight, url: actualUrl });
     }
 
-    return NextResponse.json({ success: true, message: `Librarian has synchronized ${insights.length} visceral insights on "${topic}".` });
+    return NextResponse.json({ 
+        success: true, 
+        message: `Synchronized ${results.length} live insights from r/${sub}.`,
+        insights: results
+    });
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Research failed";
+    console.error("[Librarian API Error]:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
