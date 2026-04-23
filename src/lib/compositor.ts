@@ -36,16 +36,15 @@ export async function compositeSlide(
 
   // 5. Create hook text SVG
   const hookOverlay = createHookTextOverlay(hookText);
-
-  // 6. (DEPRECATED) CTA footer removed from story slides for cleaner look
-  // const ctaOverlay = createCtaOverlay("Download JINTA. jinta.xyz");
+  // Calculate raw line count for positioning logic
+  const linesCount = wrapText(hookText, 25).length;
 
   // 7. Composite all layers
   const result = await baseImage
     .composite([
       { input: gradientOverlay, top: 0, left: 0 },
       { input: logoOverlay, top: 60, left: 48 },
-      { input: hookOverlay, top: SLIDE_HEIGHT - 620, left: 0 },
+      { input: hookOverlay, top: SLIDE_HEIGHT - (450 + (linesCount * 30)), left: 0 },
     ])
     .png({ quality: 90 })
     .toBuffer();
@@ -137,12 +136,11 @@ function createLogoOverlay(): Buffer {
       <text
         x="0"
         y="50"
-        font-family="Arial Black, Impact, Helvetica, sans-serif"
+        font-family="sans-serif"
         font-size="44"
         font-weight="900"
         fill="white"
         letter-spacing="8"
-        filter="url(#logoShadow)"
       >JINTA</text>
     </svg>
   `;
@@ -158,7 +156,7 @@ function createBigLogoOverlay(): Buffer {
       <text
         x="250"
         y="90"
-        font-family="Arial Black, Impact, Helvetica, sans-serif"
+        font-family="sans-serif"
         font-size="100"
         font-weight="900"
         fill="white"
@@ -171,37 +169,41 @@ function createBigLogoOverlay(): Buffer {
 }
 
 function createHookTextOverlay(hookText: string): Buffer {
-  const fontSize = 54;
-  const lineHeight = 72;
-  const lines = wrapText(hookText, 26);
+  const fontSize = 64; // Increased for impact
+  const lineHeight = 86;
+  const lines = wrapText(hookText, 25);
   const totalTextHeight = lines.length * lineHeight;
-  const svgHeight = 500;
-  const startY = (svgHeight - totalTextHeight) / 2 + fontSize;
-
+  const padding = 60;
+  const boxHeight = totalTextHeight + (padding * 2);
+  const svgWidth = SLIDE_WIDTH;
+  
   const tspans = lines
     .map(
       (line, i) =>
-        `<tspan x="${SLIDE_WIDTH / 2}" dy="${i === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`
+        `<tspan x="${svgWidth / 2}" dy="${i === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`
     )
     .join("\n        ");
 
   const svg = `
-    <svg width="${SLIDE_WIDTH}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <filter id="textShadow" x="-10%" y="-10%" width="120%" height="120%">
-          <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000000" flood-opacity="0.8" />
-        </filter>
-      </defs>
+    <svg width="${svgWidth}" height="${boxHeight}" xmlns="http://www.w3.org/2000/svg">
+      <!-- High-Prestige Cinematic Shadow Box -->
+      <rect 
+        x="0" 
+        y="0" 
+        width="${svgWidth}" 
+        height="${boxHeight}" 
+        fill="#000000" 
+        fill-opacity="0.6" 
+      />
       <text
-        x="${SLIDE_WIDTH / 2}"
-        y="${startY}"
-        font-family="Arial Black, Impact, Helvetica, sans-serif"
+        x="${svgWidth / 2}"
+        y="${padding + fontSize - 10}"
+        font-family="sans-serif"
         font-size="${fontSize}"
         font-weight="900"
-        fill="white"
+        fill="#ffffff"
         text-anchor="middle"
         letter-spacing="1"
-        filter="url(#textShadow)"
       >
         ${tspans}
       </text>
@@ -233,7 +235,7 @@ function createCtaHeadingOverlay(text: string): Buffer {
       <text
         x="${SLIDE_WIDTH / 2}"
         y="${startY}"
-        font-family="Arial Black, Impact, Helvetica, sans-serif"
+        font-family="sans-serif"
         font-size="${fontSize}"
         font-weight="900"
         fill="white"
@@ -256,7 +258,7 @@ function createCtaSubtextOverlay(text: string): Buffer {
       <text
         x="${SLIDE_WIDTH / 2}"
         y="50"
-        font-family="Arial, Helvetica, sans-serif"
+        font-family="sans-serif"
         font-size="32"
         font-weight="600"
         fill="#D4AF37"
