@@ -136,9 +136,9 @@ function createLogoOverlay(): Buffer {
       <text
         x="0"
         y="50"
-        font-family="DejaVu Sans, sans-serif"
+        font-family="DejaVu Sans, Ubuntu, sans-serif"
         font-size="44"
-        font-weight="900"
+        font-weight="bold"
         fill="white"
       >JINTA</text>
     </svg>
@@ -155,12 +155,11 @@ function createBigLogoOverlay(): Buffer {
       <text
         x="250"
         y="90"
-        font-family="sans-serif"
+        font-family="DejaVu Sans, Ubuntu, sans-serif"
         font-size="100"
-        font-weight="900"
+        font-weight="bold"
         fill="white"
         text-anchor="middle"
-        letter-spacing="16"
       >JINTA</text>
     </svg>
   `;
@@ -168,43 +167,38 @@ function createBigLogoOverlay(): Buffer {
 }
 
 function createHookTextOverlay(hookText: string): Buffer {
-  const fontSize = 64; // Increased for impact
-  const lineHeight = 86;
+  const fontSize = 64;
+  const lineHeight = 80;
   const lines = wrapText(hookText, 25);
-  const totalTextHeight = lines.length * lineHeight;
   const padding = 60;
-  const boxHeight = totalTextHeight + (padding * 2);
+  const boxHeight = (lines.length * lineHeight) + (padding * 2);
   const svgWidth = SLIDE_WIDTH;
   
-  const tspans = lines
-    .map(
-      (line, i) =>
-        `<tspan x="${svgWidth / 2}" dy="${i === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`
-    )
-    .join("\n        ");
-
-  const svg = `
-    <svg width="${svgWidth}" height="${boxHeight}" xmlns="http://www.w3.org/2000/svg">
-      <!-- High-Prestige Cinematic Shadow Box -->
-      <rect 
-        x="0" 
-        y="0" 
-        width="${svgWidth}" 
-        height="${boxHeight}" 
-        fill="#000000" 
-        fill-opacity="0.6" 
-      />
+  // Render each line as a separate ATOMIC text element for maximum Vercel compatibility
+  const textLines = lines.map((line, i) => {
+    const yPos = padding + fontSize + (i * lineHeight) - 10;
+    return `
       <text
         x="${svgWidth / 2}"
-        y="${padding + fontSize - 10}"
-        font-family="DejaVu Sans, sans-serif"
+        y="${yPos}"
+        font-family="Ubuntu, DejaVu Sans, Helvetica, Arial, sans-serif"
         font-size="${fontSize}"
-        font-weight="900"
+        font-weight="bold"
         fill="#ffffff"
         text-anchor="middle"
-      >
-        ${tspans}
-      </text>
+      >${escapeXml(line)}</text>`;
+  }).join("\n");
+
+  const svg = `
+    <svg 
+      width="${svgWidth}" 
+      height="${boxHeight}" 
+      viewBox="0 0 ${svgWidth} ${boxHeight}" 
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <!-- High-Prestige Cinematic Shadow Box -->
+      <rect x="0" y="0" width="${svgWidth}" height="${boxHeight}" fill="#000000" fill-opacity="0.6" />
+      ${textLines}
     </svg>
   `;
   return Buffer.from(svg);
@@ -215,33 +209,20 @@ function createHookTextOverlay(hookText: string): Buffer {
  */
 function createCtaHeadingOverlay(text: string): Buffer {
   const fontSize = 48;
-  const lineHeight = 66;
+  const lineHeight = 60;
   const lines = wrapText(text, 24);
-  const totalTextHeight = lines.length * lineHeight;
   const svgHeight = 450;
+  const totalTextHeight = lines.length * lineHeight;
   const startY = (svgHeight - totalTextHeight) / 2 + fontSize;
 
-  const tspans = lines
-    .map(
-      (line, i) =>
-        `<tspan x="${SLIDE_WIDTH / 2}" dy="${i === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`
-    )
-    .join("\n        ");
+  const textLines = lines.map((line, i) => {
+    const yPos = startY + (i * lineHeight);
+    return `<text x="${SLIDE_WIDTH / 2}" y="${yPos}" font-family="DejaVu Sans, Ubuntu, sans-serif" font-size="${fontSize}" font-weight="bold" fill="white" text-anchor="middle">${escapeXml(line)}</text>`;
+  }).join("\n");
 
   const svg = `
-    <svg width="${SLIDE_WIDTH}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
-      <text
-        x="${SLIDE_WIDTH / 2}"
-        y="${startY}"
-        font-family="sans-serif"
-        font-size="${fontSize}"
-        font-weight="900"
-        fill="white"
-        text-anchor="middle"
-        letter-spacing="1"
-      >
-        ${tspans}
-      </text>
+    <svg width="${SLIDE_WIDTH}" height="${svgHeight}" viewBox="0 0 ${SLIDE_WIDTH} ${svgHeight}" xmlns="http://www.w3.org/2000/svg">
+      ${textLines}
     </svg>
   `;
   return Buffer.from(svg);
@@ -252,16 +233,15 @@ function createCtaHeadingOverlay(text: string): Buffer {
  */
 function createCtaSubtextOverlay(text: string): Buffer {
   const svg = `
-    <svg width="${SLIDE_WIDTH}" height="80" xmlns="http://www.w3.org/2000/svg">
+    <svg width="${SLIDE_WIDTH}" height="80" viewBox="0 0 ${SLIDE_WIDTH} 80" xmlns="http://www.w3.org/2000/svg">
       <text
         x="${SLIDE_WIDTH / 2}"
         y="50"
-        font-family="sans-serif"
+        font-family="DejaVu Sans, Ubuntu, sans-serif"
         font-size="32"
-        font-weight="600"
+        font-weight="bold"
         fill="#D4AF37"
         text-anchor="middle"
-        letter-spacing="3"
       >${escapeXml(text)}</text>
     </svg>
   `;
@@ -270,23 +250,16 @@ function createCtaSubtextOverlay(text: string): Buffer {
 
 function createCtaOverlay(text: string): Buffer {
   const svg = `
-    <svg width="${SLIDE_WIDTH}" height="80" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <filter id="ctaShadow" x="-10%" y="-10%" width="120%" height="120%">
-          <feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#000000" flood-opacity="0.6" />
-        </filter>
-      </defs>
+    <svg width="${SLIDE_WIDTH}" height="80" viewBox="0 0 ${SLIDE_WIDTH} 80" xmlns="http://www.w3.org/2000/svg">
       <text
         x="${SLIDE_WIDTH / 2}"
         y="40"
-        font-family="Arial, Helvetica, sans-serif"
+        font-family="DejaVu Sans, Ubuntu, sans-serif"
         font-size="26"
-        font-weight="400"
+        font-weight="bold"
         fill="white"
         text-anchor="middle"
         opacity="0.85"
-        letter-spacing="2"
-        filter="url(#ctaShadow)"
       >${escapeXml(text)}</text>
     </svg>
   `;
