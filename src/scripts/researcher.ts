@@ -12,13 +12,19 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 const REDDIT_SUBS = ["pornfree", "NoFap", "getdisciplined", "semenretention"];
-const YT_TOPICS = ["dopamine detox", "brain fog recovery", "porn addiction science", "discipline habits"];
+const YT_TOPICS = [
+  "how to quit corn addiction permanently and fast", 
+  "the science of breaking the corn habit", 
+  "5 steps to stop porn addiction immediately", 
+  "dopamine detox recovery protocol",
+  "brain rewiring after porn addiction"
+];
 
 /**
  * Scrapes top Reddit posts per sub
  */
 async function researchReddit() {
-  console.log(`[Master Librarian] 📥 Infiltrating Reddit...`);
+  console.log(`[Master Librarian] 📥 Infiltrating Reddit for Solutions & Struggles...`);
   
   for (const sub of REDDIT_SUBS) {
     try {
@@ -36,12 +42,18 @@ async function researchReddit() {
         Source: Reddit (r/${sub})
         Context: "${title}\n${selftext.slice(0, 800)}"
         
-        Task: Extract one RAW, VISCERAL human insight about the neuro-cost of addiction or the struggle for discipline.
+        Task: Extract one RAW, VISCERAL human insight. 
+        Focus on either the depth of the STRUGGLE or the clarity of a SOLUTION they discovered.
         No coaching talk. No fluff. Max 2 sentences.`;
 
         const result = await model.generateContent(prompt);
         const insight = result.response.text().trim();
-        const sourceUrl = url.startsWith("http") ? url : `https://www.reddit.com${url}`;
+        
+        // --- FIX: Normalize Reddit URL to avoid double-prefix ---
+        let sourceUrl = url;
+        if (url.startsWith("/")) {
+          sourceUrl = `https://www.reddit.com${url}`;
+        }
 
         await saveResearch("reddit", `Insight from u/${author} in r/${sub}`, insight, sourceUrl);
         console.log(`[Master Librarian] Saved Reddit Insight: ${title.slice(0, 40)}...`);
