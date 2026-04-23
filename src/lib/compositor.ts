@@ -299,3 +299,9 @@ function escapeXml(text: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
 }
+/ /  
+ R E V E R T E D  
+ S T A B L E  
+ D E P L O Y M E N T  
+ T R I G G E R  
+ 
