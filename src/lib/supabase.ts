@@ -1,20 +1,48 @@
 import { createClient } from "@supabase/supabase-js";
 import { GeneratedSlide, JudgeResult } from "./types";
 
-const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseUrl = process.env.SUPABASE_URL?.trim() || "";
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
+export const isSupabaseConfigured = Boolean(
+  supabaseUrl && supabaseServiceKey
+);
 
-if (!supabaseUrl || !supabaseServiceKey) {
+if (!isSupabaseConfigured) {
   console.warn("Supabase credentials missing. Persistent state will be disabled.");
 }
 
-export const supabase = createClient(supabaseUrl, supabaseServiceKey);
+function isLikelyHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function createSupabaseClientSafe() {
+  if (!isSupabaseConfigured) return null;
+  if (!isLikelyHttpUrl(supabaseUrl)) {
+    console.warn("Supabase URL is invalid. Persistent state will be disabled.");
+    return null;
+  }
+
+  try {
+    return createClient(supabaseUrl, supabaseServiceKey);
+  } catch (error) {
+    console.warn("Supabase client initialization failed. Persistent state will be disabled.", error);
+    return null;
+  }
+}
+
+export const supabase = createSupabaseClientSafe();
 
 /**
  * --- QUEUE HELPERS (Autonomous Swarm) ---
  */
 
 export async function getNextQueuedKeyword() {
+  if (!isSupabaseConfigured || !supabase) return null;
   const { data, error } = await supabase
     .from("queue")
     .select("keyword")
@@ -31,6 +59,7 @@ export async function getNextQueuedKeyword() {
  */
 
 export async function saveResearch(type: "reddit" | "youtube" | "article", content: string, insight: string, url?: string) {
+  if (!isSupabaseConfigured || !supabase) return false;
   const { error } = await supabase.from("research_vault").insert({
     source_type: type,
     original_content: content,
@@ -41,6 +70,7 @@ export async function saveResearch(type: "reddit" | "youtube" | "article", conte
 }
 
 export async function getTopInsights(count: number = 5) {
+  if (!isSupabaseConfigured || !supabase) return [];
   const { data, error } = await supabase
     .from("research_vault")
     .select("*")
@@ -62,6 +92,7 @@ export async function saveFinalGeneration(
   evaluation: JudgeResult, 
   zipUrl?: string
 ) {
+  if (!isSupabaseConfigured || !supabase) return null;
   const { data, error } = await supabase.from("generations").insert({
     keyword,
     angle,
@@ -79,6 +110,7 @@ export async function saveFinalGeneration(
  */
 
 export async function uploadZipToStorage(filePath: string, fileName: string) {
+  if (!isSupabaseConfigured || !supabase) return null;
   const fs = require("fs");
   const fileBuffer = fs.readFileSync(filePath);
 

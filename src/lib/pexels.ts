@@ -1,6 +1,11 @@
 import { PexelsPhoto, PexelsSearchResponse } from "./types";
+import fs from "fs";
+import path from "path";
 
 const PEXELS_API_BASE = "https://api.pexels.com/v1";
+const PEXELS_USAGE_FILE = path.join(process.cwd(), "_cache", "pexels-usage.json");
+const PIXABAY_API_BASE = "https://pixabay.com/api";
+const UNSPLASH_API_BASE = "https://api.unsplash.com/search/photos";
 
 /**
  * Maps user-facing keywords to Pexels search terms that return
@@ -56,7 +61,7 @@ export async function fetchPortraitPhotos(
 
     for (const term of searches) {
       try {
-        const photos = await searchPexels(apiKey, term, perSearch);
+        const photos = await searchAllProviders(apiKey, term, perSearch);
         allPhotos.push(...photos);
       } catch {
         // Skip failed searches, continue with others
@@ -68,7 +73,7 @@ export async function fetchPortraitPhotos(
   if (allPhotos.length < count) {
     const fallbackTerm = `${keyword} dark portrait`;
     try {
-      const photos = await searchPexels(apiKey, fallbackTerm, count * 2);
+      const photos = await searchAllProviders(apiKey, fallbackTerm, count * 2);
       allPhotos.push(...photos);
     } catch {
       // Fall back to raw keyword
@@ -77,7 +82,7 @@ export async function fetchPortraitPhotos(
 
   // Final fallback: raw keyword
   if (allPhotos.length < count) {
-    const photos = await searchPexels(apiKey, keyword, count * 2);
+    const photos = await searchAllProviders(apiKey, keyword, count * 2);
     allPhotos.push(...photos);
   }
 
@@ -95,9 +100,93 @@ export async function fetchPortraitPhotos(
     return true;
   });
 
-  // Shuffle and return requested count
-  const shuffled = unique.sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
+  const selected = selectDiversePhotos(unique, count);
+  recordImageUsage(selected);
+  return selected;
+}
+
+async function searchAllProviders(apiKey: string, query: string, perPage: number) {
+  const results = await Promise.allSettled([
+    searchPexels(apiKey, query, perPage),
+    searchPixabay(query, perPage),
+    searchUnsplash(query, perPage),
+  ]);
+
+  const merged: PexelsPhoto[] = [];
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      merged.push(...result.value);
+    }
+  }
+  return merged;
+}
+
+function loadUsage(): Record<string, { count: number; firstSlideCount: number }> {
+  try {
+    if (!fs.existsSync(PEXELS_USAGE_FILE)) return {};
+    return JSON.parse(fs.readFileSync(PEXELS_USAGE_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveUsage(usage: Record<string, { count: number; firstSlideCount: number }>) {
+  const dir = path.dirname(PEXELS_USAGE_FILE);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(PEXELS_USAGE_FILE, JSON.stringify(usage, null, 2), "utf8");
+}
+
+function photoKey(photo: PexelsPhoto) {
+  return String(photo.id);
+}
+
+function selectDiversePhotos(unique: PexelsPhoto[], count: number): PexelsPhoto[] {
+  const usage = loadUsage();
+  const shuffled = [...unique].sort(() => Math.random() - 0.5);
+
+  // Never reuse a first-slide image if alternatives exist.
+  const firstSlideCandidates = shuffled.filter((photo) => {
+    const key = photoKey(photo);
+    const stats = usage[key];
+    return !stats || stats.firstSlideCount === 0;
+  });
+  const firstSlidePhoto = firstSlideCandidates[0] || shuffled[0];
+  const selected: PexelsPhoto[] = [];
+  if (firstSlidePhoto) selected.push(firstSlidePhoto);
+
+  // For all other slide positions, cap each photo to 2 lifetime uses if possible.
+  for (const photo of shuffled) {
+    if (selected.length >= count) break;
+    if (photo.id === firstSlidePhoto?.id) continue;
+    const key = photoKey(photo);
+    const stats = usage[key];
+    if (!stats || stats.count < 2) {
+      selected.push(photo);
+    }
+  }
+
+  // If strict constraints run out of options, relax to fill batch.
+  for (const photo of shuffled) {
+    if (selected.length >= count) break;
+    if (selected.some((s) => s.id === photo.id)) continue;
+    selected.push(photo);
+  }
+
+  return selected.slice(0, count);
+}
+
+function recordImageUsage(selected: PexelsPhoto[]) {
+  const usage = loadUsage();
+  selected.forEach((photo, index) => {
+    const key = photoKey(photo);
+    const current = usage[key] || { count: 0, firstSlideCount: 0 };
+    current.count += 1;
+    if (index === 0) current.firstSlideCount += 1;
+    usage[key] = current;
+  });
+  saveUsage(usage);
 }
 
 /**
@@ -108,26 +197,163 @@ async function searchPexels(
   query: string,
   perPage: number
 ): Promise<PexelsPhoto[]> {
+  const totalPerPage = Math.min(perPage, 80);
+  const pageCount = Math.min(3, Math.max(1, Math.ceil(perPage / 40)));
+  const collected: PexelsPhoto[] = [];
+
+  for (let page = 1; page <= pageCount; page++) {
+    const params = new URLSearchParams({
+      query,
+      orientation: "portrait",
+      per_page: String(totalPerPage),
+      page: String(page),
+      size: "large",
+    });
+
+    const response = await fetch(`${PEXELS_API_BASE}/search?${params}`, {
+      headers: { Authorization: apiKey },
+      next: { revalidate: 3600 },
+    });
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        throw new Error("Pexels rate limit reached (200 req/hr).");
+      }
+      throw new Error(`Pexels API error ${response.status}`);
+    }
+
+    const data: PexelsSearchResponse = await response.json();
+    collected.push(...(data.photos || []));
+    if (!data.next_page) break;
+  }
+
+  return collected;
+}
+
+interface PixabayResponse {
+  hits: Array<{
+    id: number;
+    largeImageURL: string;
+    webformatURL: string;
+    user: string;
+    user_id: number;
+    tags: string;
+    imageWidth: number;
+    imageHeight: number;
+  }>;
+}
+
+async function searchPixabay(query: string, perPage: number): Promise<PexelsPhoto[]> {
+  const pixabayKey = process.env.PIXABAY_API_KEY;
+  if (!pixabayKey) return [];
+
+  const params = new URLSearchParams({
+    key: pixabayKey,
+    q: query,
+    image_type: "photo",
+    orientation: "vertical",
+    safesearch: "true",
+    per_page: String(Math.min(perPage, 50)),
+    page: "1",
+  });
+
+  const response = await fetch(`${PIXABAY_API_BASE}/?${params}`);
+  if (!response.ok) return [];
+
+  const data: PixabayResponse = await response.json();
+  return (data.hits || []).map((hit) => ({
+    id: Number(`2${hit.id}`),
+    width: hit.imageWidth || 1080,
+    height: hit.imageHeight || 1920,
+    url: hit.largeImageURL || hit.webformatURL,
+    photographer: hit.user || "Pixabay",
+    photographer_url: `https://pixabay.com/users/${hit.user || ""}-${hit.user_id || ""}/`,
+    photographer_id: hit.user_id || 0,
+    avg_color: "#111111",
+    src: {
+      original: hit.largeImageURL || hit.webformatURL,
+      large2x: hit.largeImageURL || hit.webformatURL,
+      large: hit.webformatURL || hit.largeImageURL,
+      medium: hit.webformatURL || hit.largeImageURL,
+      small: hit.webformatURL || hit.largeImageURL,
+      portrait: hit.largeImageURL || hit.webformatURL,
+      landscape: hit.webformatURL || hit.largeImageURL,
+      tiny: hit.webformatURL || hit.largeImageURL,
+    },
+    liked: false,
+    alt: hit.tags || "pixabay image",
+  }));
+}
+
+interface UnsplashResponse {
+  results: Array<{
+    id: string;
+    width: number;
+    height: number;
+    alt_description: string | null;
+    user: {
+      name: string;
+      username: string;
+    };
+    urls: {
+      raw: string;
+      full: string;
+      regular: string;
+      small: string;
+      thumb: string;
+    };
+  }>;
+}
+
+async function searchUnsplash(query: string, perPage: number): Promise<PexelsPhoto[]> {
+  const unsplashKey = process.env.UNSPLASH_ACCESS_KEY;
+  if (!unsplashKey) return [];
+
   const params = new URLSearchParams({
     query,
     orientation: "portrait",
-    per_page: String(Math.min(perPage, 80)),
+    per_page: String(Math.min(perPage, 30)),
     page: "1",
-    size: "large",
+    content_filter: "high",
   });
 
-  const response = await fetch(`${PEXELS_API_BASE}/search?${params}`, {
-    headers: { Authorization: apiKey },
-    next: { revalidate: 3600 },
+  const response = await fetch(`${UNSPLASH_API_BASE}?${params}`, {
+    headers: {
+      Authorization: `Client-ID ${unsplashKey}`,
+    },
   });
+  if (!response.ok) return [];
 
-  if (!response.ok) {
-    if (response.status === 429) {
-      throw new Error("Pexels rate limit reached (200 req/hr).");
-    }
-    throw new Error(`Pexels API error ${response.status}`);
+  const data: UnsplashResponse = await response.json();
+  return (data.results || []).map((item, index) => ({
+    id: Number(`3${index}${Math.abs(hashCode(item.id))}`),
+    width: item.width || 1080,
+    height: item.height || 1920,
+    url: item.urls.full || item.urls.regular,
+    photographer: item.user?.name || "Unsplash",
+    photographer_url: `https://unsplash.com/@${item.user?.username || ""}`,
+    photographer_id: 0,
+    avg_color: "#101010",
+    src: {
+      original: item.urls.raw || item.urls.full,
+      large2x: item.urls.full || item.urls.regular,
+      large: item.urls.regular || item.urls.full,
+      medium: item.urls.regular || item.urls.small,
+      small: item.urls.small || item.urls.thumb,
+      portrait: item.urls.regular || item.urls.full,
+      landscape: item.urls.regular || item.urls.full,
+      tiny: item.urls.thumb || item.urls.small,
+    },
+    liked: false,
+    alt: item.alt_description || "unsplash image",
+  }));
+}
+
+function hashCode(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
+    hash |= 0;
   }
-
-  const data: PexelsSearchResponse = await response.json();
-  return data.photos || [];
+  return hash;
 }
