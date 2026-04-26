@@ -3,9 +3,9 @@ export const dynamic = "force-dynamic";
 import { fetchPortraitPhotos } from "@/lib/pexels";
 import { compositeSlide, compositeCtaSlide } from "@/lib/compositor";
 import { CTA_SLIDE_TEXT, CTA_SLIDE_SUBTEXT, GeneratedSlide, GenerateResponse, GenerateError } from "@/lib/types";
-import { brainstormHooks, judgeDrafts } from "@/lib/gemini";
+import { selectDraftWithTaste } from "@/lib/gemini";
 import { fetchMusicTracks } from "@/lib/freesound";
-import { supabase } from "@/lib/supabase";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
 export const maxDuration = 60; // Allow up to 60s for batch processing
 
@@ -15,42 +15,59 @@ export async function POST(request: NextRequest) {
     const keyword: string = body.keyword?.trim();
     const count: number = Math.min(Math.max(body.count || 5, 2), 20);
 
-    // --- AGENTIC FEEDBACK LOOP: Surgical Keyword Retrieval ---
-    // Clean keyword for better matching (e.g. "Dopamine" instead of "Dopamine addiction")
-    const searchTerms = keyword.split(" ")[0].trim();
+    // --- KNOWLEDGE BASE RETRIEVAL: relevance + source diversity ---
+    const keywordTokens = keyword
+      .toLowerCase()
+      .split(/\s+/)
+      .map((t) => t.trim())
+      .filter((t) => t.length > 2);
 
-    const { data: insights } = await supabase
-      .from("research_vault")
-      .select("key_insight, source_url, source_type")
-      .or(`key_insight.ilike.%${searchTerms}%,content.ilike.%${searchTerms}%`)
-      .order("created_at", { ascending: false })
-      .limit(3);
-    
-    // Fallback if no matching insights found -> Get absolute latest
-    let activeInsights = insights;
-    if (!insights || insights.length === 0) {
-      const { data: latest } = await supabase
+    let insightRows: any[] | null = null;
+    if (isSupabaseConfigured && supabase) {
+      const result = await supabase
         .from("research_vault")
-        .select("key_insight, source_url, source_type")
+        .select("key_insight, source_url, source_type, original_content, created_at")
         .order("created_at", { ascending: false })
-        .limit(3);
-      activeInsights = latest;
+        .limit(40);
+      insightRows = result.data;
+    }
+
+    let activeInsights: any[] | null = null;
+    if (insightRows && insightRows.length > 0) {
+      const scored = insightRows.map((row) => {
+        const hay = `${row.key_insight || ""} ${row.original_content || ""}`.toLowerCase();
+        const score = keywordTokens.reduce((acc, token) => {
+          return acc + (hay.includes(token) ? 1 : 0);
+        }, 0);
+        return { row, score };
+      });
+
+      scored.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return new Date(b.row.created_at).getTime() - new Date(a.row.created_at).getTime();
+      });
+
+      const perSource = new Map<string, number>();
+      const picked: any[] = [];
+      for (const item of scored) {
+        if (picked.length >= 6) break;
+        const source = item.row.source_type || "unknown";
+        const used = perSource.get(source) || 0;
+        if (used >= 2) continue;
+        picked.push(item.row);
+        perSource.set(source, used + 1);
+      }
+
+      activeInsights = picked;
     }
     
-    const researchContext = activeInsights && activeInsights.length > 0 
+    const researchContext = activeInsights && activeInsights.length > 0
       ? activeInsights.map(i => `[Source: ${i.source_type}] - ${i.key_insight}`).join("\n")
       : "";
 
     // 1. Generate story hooks via Gemini 2.5 (High-IQ Narrative Engine)
     const storyTargetCount = count - 1;
-    const drafts = await brainstormHooks(keyword, storyTargetCount, researchContext);
-    const evaluation = await judgeDrafts(drafts);
-    
-    if (evaluation.bestDraftIndex === -1) {
-       return NextResponse.json({ error: "The AI Judge rejected the content quality. Try a different keyword." }, { status: 500 });
-    }
-    
-    const winningDraft = drafts[evaluation.bestDraftIndex];
+     const { draft: winningDraft } = await selectDraftWithTaste(keyword, storyTargetCount, researchContext, 3);
     const storySlides = winningDraft.slides; 
     const countWithCta = storySlides.length + 1; 
     const hookSource = "gemini";
@@ -65,7 +82,7 @@ export async function POST(request: NextRequest) {
     // 3. Auto-fetch matching music
     let selectedMusic = null;
     try {
-      const tracks = await fetchMusicTracks(winningDraft.vibe || "dark", 1);
+      const tracks = await fetchMusicTracks(winningDraft.vibe || "dark", 1, keyword);
       if (tracks.length > 0) selectedMusic = tracks[0];
     } catch (err) {
       console.error("Failed to auto-fetch music:", err);

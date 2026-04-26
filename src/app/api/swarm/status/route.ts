@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
-import { supabase } from "@/lib/supabase";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
 export async function GET(request: NextRequest) {
   try {
-    // 1. Fetch latest research insights
-    const { data: insights, error: insightError } = await supabase
+    if (!isSupabaseConfigured || !supabase) {
+      return NextResponse.json({ insights: [], history: [] });
+    }
+
+    // 1. Fetch latest research insights (wider window), then balance by source
+    const { data: insightRows, error: insightError } = await supabase
       .from("research_vault")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(6);
+      .limit(30);
 
     // 2. Fetch latest shadow worker generations
     const { data: history, error: historyError } = await supabase
@@ -22,8 +26,26 @@ export async function GET(request: NextRequest) {
       throw new Error(insightError?.message || historyError?.message);
     }
 
+    const bySource = new Map<string, any[]>();
+    for (const row of insightRows || []) {
+      const key = row.source_type || "unknown";
+      if (!bySource.has(key)) bySource.set(key, []);
+      bySource.get(key)!.push(row);
+    }
+
+    const balanced: any[] = [];
+    const sourceOrder = ["reddit", "article", "youtube", "unknown"];
+    for (const source of sourceOrder) {
+      const rows = bySource.get(source) || [];
+      balanced.push(...rows.slice(0, 4));
+    }
+
+    balanced.sort((a, b) => {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+
     return NextResponse.json({
-      insights: insights || [],
+      insights: balanced.slice(0, 12),
       history: history || [],
     });
   } catch (err: unknown) {
