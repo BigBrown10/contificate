@@ -31,6 +31,14 @@ jobs:
           git show -s --format='%H %s'
           sed -n '1,35p' src/lib/supabase.ts
 
+      - name: Assert latest master checkout
+        run: |
+          local_sha="$(git rev-parse HEAD)"
+          remote_sha="$(git ls-remote origin refs/heads/master | cut -f1)"
+          echo "Local SHA:  ${local_sha}"
+          echo "Remote SHA: ${remote_sha}"
+          test "${local_sha}" = "${remote_sha}" || (echo "Workflow is not on latest master. Run workflow_dispatch from master instead of rerun." && exit 1)
+
       - name: Validate Required Secrets
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
