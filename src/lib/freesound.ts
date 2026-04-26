@@ -78,6 +78,41 @@ function shuffle<T>(arr: T[]): T[] {
   return copy;
 }
 
+async function searchTracks(
+  apiKey: string,
+  query: string,
+  count: number
+): Promise<FreesoundSearchResult[]> {
+  const params = new URLSearchParams({
+    query,
+    fields: "id,name,duration,previews,username,license,tags",
+    filter: "duration:[20 TO 180]", // 20s - 3min tracks
+    sort: "score",
+    page_size: String(Math.min(count * 8, 40)),
+    token: apiKey,
+  });
+
+  const response = await fetch(
+    `https://freesound.org/apiv2/search/text/?${params}`
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    if (response.status === 429) {
+      throw new Error("Freesound rate limit reached. Try again later.");
+    }
+    if (response.status === 401) {
+      throw new Error("Invalid Freesound API key. Check your .env.local.");
+    }
+    throw new Error(`Freesound API error ${response.status}: ${errorText}`);
+  }
+
+  const data: FreesoundSearchResponse = await response.json();
+  return (data.results || []).filter(
+    (r) => r.previews && r.previews["preview-hq-mp3"]
+  );
+}
+
 /**
  * Searches Freesound for instrumental music tracks matching a mood.
  * Returns preview MP3 URLs (no OAuth needed — just API key).
@@ -109,46 +144,25 @@ export async function fetchMusicTracks(
     .slice(0, 4)
     .join(" ");
 
-  const searchQuery = keywordTerms
-    ? `${keywordTerms} ${moodQuery} instrumental`
-    : moodQuery;
+  const queryCandidates = [
+    keywordTerms ? `${keywordTerms} ${moodQuery} instrumental` : "",
+    moodQuery,
+    MOOD_KEYWORDS.default,
+  ].filter(Boolean);
 
-  const params = new URLSearchParams({
-    query: searchQuery,
-    fields: "id,name,duration,previews,username,license,tags",
-    filter: "duration:[30 TO 180]", // 30s - 3min tracks
-    sort: "score",
-    page_size: String(Math.min(count * 8, 40)), // Fetch much wider to allow randomization
-    token: apiKey,
-  });
-
-  const response = await fetch(
-    `https://freesound.org/apiv2/search/text/?${params}`
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    if (response.status === 429) {
-      throw new Error("Freesound rate limit reached. Try again later.");
+  let withPreviews: FreesoundSearchResult[] = [];
+  for (const query of queryCandidates) {
+    withPreviews = await searchTracks(apiKey, query, count);
+    if (withPreviews.length > 0) {
+      break;
     }
-    if (response.status === 401) {
-      throw new Error("Invalid Freesound API key. Check your .env.local.");
-    }
-    throw new Error(`Freesound API error ${response.status}: ${errorText}`);
   }
 
-  const data: FreesoundSearchResponse = await response.json();
-
-  if (!data.results || data.results.length === 0) {
+  if (withPreviews.length === 0) {
     throw new Error(
-      `No music found for mood "${mood}". Try "dark", "motivational", or "gym".`
+      `No music found for mood "${mood}". Tried fallback queries and still found no preview tracks.`
     );
   }
-
-  // Filter to only tracks that have HQ MP3 previews
-  const withPreviews = data.results.filter(
-    (r) => r.previews && r.previews["preview-hq-mp3"]
-  );
 
   const usage = loadMusicUsage();
   const filteredByRecency = withPreviews.filter((r) => !usage.recentTrackIds.includes(r.id));
