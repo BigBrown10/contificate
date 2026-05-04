@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { brainstormHooks, judgeDrafts, JudgeResult, DraftSequence } from "./gemini";
+import { selectDraftWithTaste, JudgeResult } from "./gemini";
 import { fetchPortraitPhotos } from "./pexels";
 import { compositeSlide, compositeCtaSlide } from "./compositor";
 import { GeneratedSlide, CTA_SLIDE_TEXT, CTA_SLIDE_SUBTEXT } from "./types";
@@ -22,24 +22,19 @@ export interface OrchestratorResult {
  * Runs the full agentic pipeline: 
  * 1. Brainstorm -> 2. Judge -> 3. Generate Visuals -> 4. Publish / Save
  */
-export async function runAutopilotPipeline(keyword: string): Promise<OrchestratorResult> {
+export async function runAutopilotPipeline(keyword: string, researchContext: string = ""): Promise<OrchestratorResult> {
   console.log(`[Orchestrator] Starting Autopilot Pipeline for: "${keyword}"`);
 
-  // Step 1 & 2: The Two-Shot Agent Pipeline
-  let drafts: DraftSequence[] = [];
+  // Step 1 & 2: Taste-gated story pipeline
+  let winningDraft;
+  let evaluation: JudgeResult;
   try {
-    drafts = await brainstormHooks(keyword);
+    const selection = await selectDraftWithTaste(keyword, 6, researchContext, 3);
+    winningDraft = selection.draft;
+    evaluation = selection.evaluation;
   } catch (err) {
     console.error(`[Orchestrator] Brainstormer failed:`, err);
     return { status: "failed", message: "Failed to brainstorm hooks via Gemini." };
-  }
-
-  let evaluation: JudgeResult;
-  try {
-    evaluation = await judgeDrafts(drafts);
-  } catch (err) {
-    console.error(`[Orchestrator] Judge failed:`, err);
-    return { status: "failed", message: "Failed to judge drafts via Gemini." };
   }
 
   // Reject if poor quality
@@ -52,7 +47,6 @@ export async function runAutopilotPipeline(keyword: string): Promise<Orchestrato
     };
   }
 
-  const winningDraft = drafts[evaluation.bestDraftIndex];
   console.log(`[Orchestrator] Winner chosen! Score: ${evaluation.score}/10. Angle: ${winningDraft.angle}`);
 
   // Step 3: Fetch Images & Composite Visuals (Force use of raw keyword to avoid "corn plant" imagery)
@@ -105,7 +99,7 @@ export async function runAutopilotPipeline(keyword: string): Promise<Orchestrato
   // Fetch matching music
   let audioUrl: string | undefined;
   try {
-    const musicTracks = await fetchMusicTracks(winningDraft.vibe, 1);
+    const musicTracks = await fetchMusicTracks(winningDraft.vibe, 1, keyword);
     if (musicTracks.length > 0) audioUrl = musicTracks[0].previewUrl;
   } catch (err) {
     console.error(`[Orchestrator] Failed to fetch music for vibe ${winningDraft.vibe}:`, err);
@@ -181,6 +175,11 @@ function saveToApprovedVault(keyword: string, angle: string, slides: GeneratedSl
     angle,
     score: evaluation.score,
     critique: evaluation.critique,
+    slides: slides.map((slide, index) => ({
+      order: index + 1,
+      role: slide.role,
+      text: slide.hookText,
+    })),
     generatedAt: new Date().toISOString()
   };
   fs.writeFileSync(path.join(savePath, `metadata.json`), JSON.stringify(metadata, null, 2));

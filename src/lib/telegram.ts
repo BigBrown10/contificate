@@ -1,5 +1,4 @@
 import fs from "fs";
-import FormData from "form-data";
 
 /**
  * Sends the generated ZIP package to Telegram for Human-in-the-Loop review.
@@ -20,14 +19,33 @@ export async function sendApprovalRequest(
     return;
   }
 
+  if (!fs.existsSync(zipPath)) {
+    console.error(`[Telegram] ZIP file missing at path: ${zipPath}`);
+    return;
+  }
+
   try {
-    const caption = `🚀 **JINTA AI Orchestrator: Ready for HITL Review**\n\n🔹 **Angle:** ${angle}\n🧠 **Judge Score:** ${score}/10\n💡 **Critique:** ${critique}\n\nThe ZIP contains the generated carousel slides and the matching background track.\n\nDo you want to auto-post this batch to TikTok via Ayrshare?`;
+    const safeCritique = (critique || "No critique")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300);
+    const caption = [
+      "JINTA Orchestrator: Ready for HITL review",
+      `Angle: ${angle}`,
+      `Judge Score: ${score}/10`,
+      `Critique: ${safeCritique}`,
+      "",
+      "This ZIP contains generated carousel slides and a matching background track.",
+      "Approve to trigger the TikTok autopost flow."
+    ].join("\n");
 
     const formData = new FormData();
+    const fileBuffer = await fs.promises.readFile(zipPath);
+    const zipBlob = new Blob([fileBuffer], { type: "application/zip" });
+
     formData.append("chat_id", chatId);
-    formData.append("caption", caption);
-    formData.append("parse_mode", "Markdown");
-    formData.append("document", fs.createReadStream(zipPath));
+    formData.append("caption", caption.slice(0, 1000));
+    formData.append("document", zipBlob, "tiktok-batch.zip");
     
     const inlineKeyboard = {
       inline_keyboard: [
@@ -44,7 +62,6 @@ export async function sendApprovalRequest(
     const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
       method: "POST",
       body: formData as any,
-      headers: formData.getHeaders(),
     });
 
     if (!response.ok) {

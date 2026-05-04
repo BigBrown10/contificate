@@ -4,6 +4,7 @@
 
 import fs from "fs";
 import path from "path";
+import { resolveCacheFile } from "./runtime-cache";
 
 export interface FreesoundTrack {
   id: number;
@@ -52,7 +53,7 @@ const MOOD_KEYWORDS: Record<string, string> = {
   "default": "dark cinematic motivational instrumental",
 };
 
-const MUSIC_USAGE_FILE = path.join(process.cwd(), "_cache", "music-usage.json");
+const MUSIC_USAGE_FILE = resolveCacheFile("music-usage.json");
 
 function loadMusicUsage(): { recentTrackIds: number[] } {
   try {

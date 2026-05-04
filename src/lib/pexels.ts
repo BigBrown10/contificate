@@ -1,9 +1,10 @@
 import { PexelsPhoto, PexelsSearchResponse } from "./types";
 import fs from "fs";
 import path from "path";
+import { resolveCacheFile } from "./runtime-cache";
 
 const PEXELS_API_BASE = "https://api.pexels.com/v1";
-const PEXELS_USAGE_FILE = path.join(process.cwd(), "_cache", "pexels-usage.json");
+const PEXELS_USAGE_FILE = resolveCacheFile("pexels-usage.json");
 const PIXABAY_API_BASE = "https://pixabay.com/api";
 const UNSPLASH_API_BASE = "https://api.unsplash.com/search/photos";
 

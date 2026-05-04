@@ -50,6 +50,10 @@ export default function Home() {
   const [generatedKeyword, setGeneratedKeyword] = useState("");
   const [generationTime, setGenerationTime] = useState(0);
   const [hookSource, setHookSource] = useState<"gemini" | "fallback" | null>(null);
+  const [captionText, setCaptionText] = useState("");
+  const [captionLoading, setCaptionLoading] = useState(false);
+  const [captionError, setCaptionError] = useState("");
+  const [captionCopied, setCaptionCopied] = useState(false);
   const [researchSources, setResearchSources] = useState<any[]>([]); // Attribution
   const [autopilotResult, setAutopilotResult] = useState<{
     score?: number;
@@ -114,6 +118,38 @@ export default function Home() {
   const [history, setHistory] = useState<PastGeneration[]>([]);
   const [intelligenceLoading, setIntelligenceLoading] = useState(false);
 
+  const generateCaptionForSlides = useCallback(async (
+    slideItems: GeneratedSlide[],
+    angleText?: string,
+    keywordText?: string
+  ) => {
+    if (!slideItems || slideItems.length === 0) return;
+    setCaptionLoading(true);
+    setCaptionError("");
+    try {
+      const response = await fetch("/api/caption", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          keyword: keywordText || generatedKeyword || keyword || "mindset",
+          angle: angleText || generatedKeyword || undefined,
+          slides: slideItems.map((s) => ({ role: s.role, text: s.hookText })),
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || `Caption API failed: ${response.status}`);
+      }
+      setCaptionText(data.caption || "");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to generate caption.";
+      setCaptionError(message);
+    } finally {
+      setCaptionLoading(false);
+    }
+  }, [generatedKeyword, keyword]);
+
   const fetchSwarmState = useCallback(async () => {
     setIntelligenceLoading(true);
     try {
@@ -139,6 +175,9 @@ export default function Home() {
     setError("");
     setAutopilotResult(null);
     setSlides([]);
+    setCaptionText("");
+    setCaptionError("");
+    setCaptionCopied(false);
     setLoadingMessage("Step 1: Brainstorming Hooks...");
 
     try {
@@ -217,6 +256,7 @@ export default function Home() {
       const elapsed = (Date.now() - startTime) / 1000;
       setGenerationTime(Math.round(elapsed));
       setState("done");
+      await generateCaptionForSlides(processedSlides, plan.winningAngle, plan.keyword);
 
     } catch (err) {
       const message = err instanceof Error ? err.message : "Waterfall generation failed.";
@@ -232,6 +272,9 @@ export default function Home() {
     setError("");
     setAutopilotResult(null);
     setSlides([]);
+    setCaptionText("");
+    setCaptionError("");
+    setCaptionCopied(false);
     setLoadingMessage("Agent Cabal spinning up...");
     const startTime = performance.now();
 
@@ -266,6 +309,7 @@ export default function Home() {
       setGenerationTime(Math.round(elapsed));
       setHookSource("gemini"); // We know it's Gemini
       setState("done");
+      await generateCaptionForSlides(data.slides || [], data.angle || keyword, keyword);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Orchestrator failed.";
@@ -281,7 +325,7 @@ export default function Home() {
 
     try {
       const response = await fetch(
-        `/api/music?mood=${encodeURIComponent(musicMood)}&count=5`
+        `/api/music?mood=${encodeURIComponent(musicMood)}&keyword=${encodeURIComponent(generatedKeyword || keyword)}&count=5`
       );
       if (!response.ok) {
         const data = await response.json();
@@ -296,7 +340,7 @@ export default function Home() {
     } finally {
       setMusicLoading(false);
     }
-  }, [musicMood]);
+  }, [musicMood, generatedKeyword, keyword]);
 
   const handlePlayPause = useCallback(
     (track: MusicTrack) => {
@@ -364,6 +408,10 @@ export default function Home() {
       }
     }
 
+    if (captionText.trim()) {
+      zip.file("caption.txt", captionText.trim());
+    }
+
     const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -373,7 +421,24 @@ export default function Home() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  }, [slides, generatedKeyword]);
+  }, [slides, generatedKeyword, musicTracks, captionText]);
+
+  const handleGenerateCaption = useCallback(async () => {
+    if (slides.length === 0) return;
+    setCaptionCopied(false);
+    await generateCaptionForSlides(slides, generatedKeyword, keyword);
+  }, [slides, generatedKeyword, keyword, generateCaptionForSlides]);
+
+  const handleCopyCaption = useCallback(async () => {
+    if (!captionText.trim()) return;
+    try {
+      await navigator.clipboard.writeText(captionText.trim());
+      setCaptionCopied(true);
+      setTimeout(() => setCaptionCopied(false), 1800);
+    } catch {
+      setCaptionError("Clipboard access failed. Copy manually from the text area.");
+    }
+  }, [captionText]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -461,9 +526,9 @@ export default function Home() {
             </select>
           </div>
 
-          <div className="input-group" style={{ flex: "none" }}>
+          <div className="input-group input-actions-group" style={{ flex: "none" }}>
             <label className="input-label">&nbsp;</label>
-            <div style={{ display: "flex", gap: "10px" }}>
+            <div className="input-actions-row">
               <button
                 id="generate-btn"
                 className="btn-generate"
@@ -474,7 +539,7 @@ export default function Home() {
               </button>
               
               {/* Autopilot Controls */}
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div className="autopilot-controls">
                 <button
                   onClick={() => setIsSettingsOpen(true)}
                   className="btn-settings"
@@ -691,6 +756,46 @@ export default function Home() {
             ))}
           </div>
 
+          <div className="caption-studio">
+            <div className="caption-header-row">
+              <div>
+                <h3 className="music-title">Caption Studio</h3>
+                <p className="music-subtitle">
+                  Generate, edit, and copy a human storytelling caption for this batch.
+                </p>
+              </div>
+              <button
+                className="btn-refresh"
+                onClick={handleGenerateCaption}
+                disabled={captionLoading}
+              >
+                {captionLoading ? "Generating..." : captionText ? "↻ Regenerate Caption" : "✨ Generate Caption"}
+              </button>
+            </div>
+
+            <textarea
+              className="caption-textarea"
+              placeholder="Your caption will appear here. You can edit before posting."
+              value={captionText}
+              onChange={(e) => setCaptionText(e.target.value)}
+              rows={7}
+            />
+
+            <div className="caption-actions">
+              <button
+                className="btn-download"
+                onClick={handleCopyCaption}
+                disabled={!captionText.trim()}
+                style={{ padding: "10px 18px", fontSize: "13px" }}
+              >
+                {captionCopied ? "Copied" : "Copy Caption"}
+              </button>
+              <span className="caption-hint">Caption is included as caption.txt in ZIP downloads.</span>
+            </div>
+
+            {captionError && <p className="caption-error">{captionError}</p>}
+          </div>
+
           {/* Music Section */}
           <div className="music-section">
             <h3 className="music-title">🎵 Background Music</h3>
@@ -805,7 +910,7 @@ export default function Home() {
             <span>Market Intelligence: <strong>{insights.length}</strong></span>
             <span>Autonomous Batches: <strong>{history.length}</strong></span>
           </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div className="swarm-actions">
             <button className="btn-refresh" onClick={fetchSwarmState} disabled={intelligenceLoading}>
               {intelligenceLoading ? "Updating..." : "↻ Sync Vault"}
             </button>
@@ -879,9 +984,9 @@ export default function Home() {
           </p>
         </section>
       )}
-      {/* Settings Modal */}
-      <AutomationSettingsModal 
-        isOpen={isSettingsOpen} 
+
+      <AutomationSettingsModal
+        isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         settings={autoSettings}
         onSave={(s) => setAutoSettings(s)}

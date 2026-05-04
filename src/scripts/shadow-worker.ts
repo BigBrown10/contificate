@@ -39,7 +39,7 @@ async function runShadowCycle() {
 
   // 3. Run the Generation Pipeline (Passing research context in the prompt would require a small edit to gemini.ts, 
   // but for now we'll run it as is and the AI will "vibe" correctly).
-  const result = await runAutopilotPipeline(targetKeyword);
+  const result = await runAutopilotPipeline(targetKeyword, researchContext);
 
   if (result.status === "failed") {
     console.error(`[ShadowWorker] Pipeline failed: ${result.message}`);
