@@ -415,10 +415,43 @@ export default function Home() {
           status: "preview",
           mode: "preview",
           message: previewCount < count
-            ? `Generated a ${previewCount}-slide preview to avoid deployment timeouts.`
-            : "Generated a deployed preview batch.",
+            ? `Generated a ${previewCount}-slide preview to avoid deployment timeouts and sent it to Telegram.`
+            : "Generated a deployed preview batch and sent it to Telegram.",
           vaultFolder: undefined,
         });
+
+        setTelegramSending(true);
+        setTelegramError("");
+        setTelegramStatus("Sending Telegram approval request...");
+
+        try {
+          const response = await fetch("/api/telegram/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              keyword: targetKeyword,
+              angle: previewResult.angle,
+              slides: previewResult.slides,
+            }),
+          });
+
+          const payload = await readResponsePayload<{ success?: boolean; preview?: boolean; message?: string; error?: string }>(response);
+          if (!response.ok) {
+            throw new Error(getResponseErrorMessage(payload, `Telegram send failed: ${response.status}`));
+          }
+
+          if (!payload.data) {
+            throw new Error(payload.rawText || "Telegram send returned an invalid response.");
+          }
+
+          setTelegramStatus(payload.data.message || "Preview batch sent to Telegram.");
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Failed to send Telegram approval request.";
+          setTelegramError(message);
+          setTelegramStatus("");
+        } finally {
+          setTelegramSending(false);
+        }
       }
 
       return;
