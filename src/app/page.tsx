@@ -331,7 +331,6 @@ export default function Home() {
 
       // Process final CTA slide
       setLoadingMessage(`Step 3: Creating Final CTA...`);
-      const ctaPhoto = plan.photos[plan.storySlides.length];
       const ctaRes = await fetch("/api/generate/process", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
