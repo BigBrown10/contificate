@@ -6,6 +6,7 @@ interface AutomationSettings {
   enabled: boolean;
   intervalHours: number;
   randomOffsetMins: number;
+  keywordList: string;
 }
 
 interface Props {
@@ -17,6 +18,14 @@ interface Props {
 
 export default function AutomationSettingsModal({ isOpen, onClose, settings, onSave }: Props) {
   const [localSettings, setLocalSettings] = useState<AutomationSettings>(settings);
+  const rotationKeywords = Array.from(
+    new Set(
+      localSettings.keywordList
+        .split(/[\n,;|]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -35,7 +44,7 @@ export default function AutomationSettingsModal({ isOpen, onClose, settings, onS
         <div className="results-header" style={{ marginBottom: '32px' }}>
           <div>
             <h2 className="results-title italic uppercase tracking-wider" style={{ color: 'var(--accent)' }}>AUTOMATION SETTINGS</h2>
-            <p className="results-meta">Configure your Autopilot frequency loop.</p>
+            <p className="results-meta">Configure your Autopilot cadence and keyword rotation.</p>
           </div>
           <button 
             onClick={onClose}
@@ -58,7 +67,7 @@ export default function AutomationSettingsModal({ isOpen, onClose, settings, onS
             border: '1px solid var(--border)' 
           }}>
             <div style={{ flex: 1 }}>
-              <p style={{ color: 'white', fontWeight: 600, fontSize: '15px' }}>Enable Autopilot Loop</p>
+              <p style={{ color: 'white', fontWeight: 600, fontSize: '15px' }}>Enable Autopilot</p>
               <p style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>Run generation automatically on a timer.</p>
             </div>
             <button
@@ -125,6 +134,24 @@ export default function AutomationSettingsModal({ isOpen, onClose, settings, onS
             </div>
             <p style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontStyle: 'italic', marginTop: '4px' }}>
               Adds/subtracts minutes to keep posting intervals randomized.
+            </p>
+          </div>
+
+          <div className="input-group">
+            <label className="input-label">Automation Keywords</label>
+            <textarea
+              value={localSettings.keywordList}
+              onChange={(e) => setLocalSettings(s => ({ ...s, keywordList: e.target.value }))}
+              className="caption-textarea"
+              placeholder="discipline, dopamine, corn recovery"
+              rows={4}
+              style={{ minHeight: '120px' }}
+            />
+            <p style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontStyle: 'italic', marginTop: '4px' }}>
+              Separate terms with commas or line breaks. The system will rotate through them one by one.
+            </p>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+              Active keywords: {rotationKeywords.length || 0}
             </p>
           </div>
 

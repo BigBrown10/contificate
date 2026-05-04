@@ -35,7 +35,7 @@ export async function sendApprovalRequest(
       `Judge Score: ${score}/10`,
       `Critique: ${safeCritique}`,
       "",
-      "This ZIP contains generated carousel slides and a matching background track.",
+      "This ZIP contains generated carousel slides, caption.txt, and a matching background track.",
       "Approve to trigger the TikTok autopost flow."
     ].join("\n");
 

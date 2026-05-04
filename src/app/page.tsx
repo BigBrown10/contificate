@@ -21,6 +21,37 @@ interface AutomationSettings {
   enabled: boolean;
   intervalHours: number;
   randomOffsetMins: number;
+  keywordList: string;
+}
+
+const DEFAULT_AUTOMATION_SETTINGS: AutomationSettings = {
+  enabled: false,
+  intervalHours: 4,
+  randomOffsetMins: 30,
+  keywordList: "",
+};
+
+function normalizeAutomationSettings(settings: Partial<AutomationSettings> | null | undefined): AutomationSettings {
+  const intervalHours = Number(settings?.intervalHours);
+  const randomOffsetMins = Number(settings?.randomOffsetMins);
+
+  return {
+    enabled: Boolean(settings?.enabled),
+    intervalHours: Number.isFinite(intervalHours) && intervalHours > 0 ? intervalHours : DEFAULT_AUTOMATION_SETTINGS.intervalHours,
+    randomOffsetMins: Number.isFinite(randomOffsetMins) && randomOffsetMins >= 0 ? randomOffsetMins : DEFAULT_AUTOMATION_SETTINGS.randomOffsetMins,
+    keywordList: typeof settings?.keywordList === "string" ? settings.keywordList : DEFAULT_AUTOMATION_SETTINGS.keywordList,
+  };
+}
+
+function parseAutomationKeywords(raw: string): string[] {
+  return Array.from(
+    new Set(
+      raw
+        .split(/[\n,;|]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  );
 }
 
 interface ResearchInsight {
@@ -60,18 +91,40 @@ export default function Home() {
     critique?: string;
     message?: string;
     status?: string;
+    vaultFolder?: string;
   } | null>(null);
+  const [telegramSending, setTelegramSending] = useState(false);
+  const [telegramStatus, setTelegramStatus] = useState("");
+  const [telegramError, setTelegramError] = useState("");
 
   // Automation State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [nextRunTime, setNextRunTime] = useState<number | null>(null);
+  const [automationKeywordIndex, setAutomationKeywordIndex] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    const saved = Number(localStorage.getItem("jinta_auto_keyword_index"));
+    return Number.isFinite(saved) && saved >= 0 ? Math.floor(saved) : 0;
+  });
   const [autoSettings, setAutoSettings] = useState<AutomationSettings>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("jinta_auto_settings");
-      return saved ? JSON.parse(saved) : { enabled: false, intervalHours: 4, randomOffsetMins: 30 };
+      return saved ? normalizeAutomationSettings(JSON.parse(saved)) : DEFAULT_AUTOMATION_SETTINGS;
     }
-    return { enabled: false, intervalHours: 4, randomOffsetMins: 30 };
+    return DEFAULT_AUTOMATION_SETTINGS;
   });
+
+  const automationKeywords = parseAutomationKeywords(autoSettings.keywordList);
+  const activeAutomationKeyword = automationKeywords.length > 0
+    ? automationKeywords[automationKeywordIndex % automationKeywords.length]
+    : "";
+  const automationKeywordSignatureRef = useRef<string | null>(null);
+
+  const scheduleNextRun = useCallback(() => {
+    const baseMs = autoSettings.intervalHours * 60 * 60 * 1000;
+    const jitterMs = (Math.random() * 2 - 1) * autoSettings.randomOffsetMins * 60 * 1000;
+    const finalMs = Math.max(60000, baseMs + jitterMs); // At least 1 min
+    setNextRunTime(Date.now() + finalMs);
+  }, [autoSettings.intervalHours, autoSettings.randomOffsetMins]);
 
   // Save settings
   useEffect(() => {
@@ -83,27 +136,22 @@ export default function Home() {
     }
   }, [autoSettings]);
 
-  const scheduleNextRun = () => {
-    const baseMs = autoSettings.intervalHours * 60 * 60 * 1000;
-    const jitterMs = (Math.random() * 2 - 1) * autoSettings.randomOffsetMins * 60 * 1000;
-    const finalMs = Math.max(60000, baseMs + jitterMs); // At least 1 min
-    setNextRunTime(Date.now() + finalMs);
-  };
-
-  // The Scheduling Loop
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (autoSettings.enabled && nextRunTime) {
-      interval = setInterval(() => {
-        const now = Date.now();
-        if (now >= nextRunTime) {
-          handleAutopilot();
-          scheduleNextRun();
-        }
-      }, 1000);
+    localStorage.setItem("jinta_auto_keyword_index", String(automationKeywordIndex));
+  }, [automationKeywordIndex]);
+
+  useEffect(() => {
+    const signature = automationKeywords.join("|");
+    if (automationKeywordSignatureRef.current === null) {
+      automationKeywordSignatureRef.current = signature;
+      return;
     }
-    return () => clearInterval(interval);
-  }, [autoSettings.enabled, nextRunTime]);
+
+    if (automationKeywordSignatureRef.current !== signature) {
+      automationKeywordSignatureRef.current = signature;
+      setAutomationKeywordIndex(0);
+    }
+  }, [automationKeywords]);
 
   // Music state
   const [musicMood, setMusicMood] = useState("dark");
@@ -178,6 +226,8 @@ export default function Home() {
     setCaptionText("");
     setCaptionError("");
     setCaptionCopied(false);
+    setTelegramStatus("");
+    setTelegramError("");
     setLoadingMessage("Step 1: Brainstorming Hooks...");
 
     try {
@@ -266,7 +316,8 @@ export default function Home() {
   }, [keyword, count]);
 
   const handleAutopilot = useCallback(async () => {
-    if (!keyword.trim()) return;
+    const targetKeyword = activeAutomationKeyword || keyword.trim();
+    if (!targetKeyword) return;
 
     setState("loading");
     setError("");
@@ -275,14 +326,25 @@ export default function Home() {
     setCaptionText("");
     setCaptionError("");
     setCaptionCopied(false);
-    setLoadingMessage("Agent Cabal spinning up...");
+    setTelegramStatus("");
+    setTelegramError("");
+    setLoadingMessage(
+      activeAutomationKeyword
+        ? `Agent Cabal spinning up for "${targetKeyword}"...`
+        : "Agent Cabal spinning up..."
+    );
+
+    if (automationKeywords.length > 0) {
+      setAutomationKeywordIndex((current) => (current + 1) % automationKeywords.length);
+    }
+
     const startTime = performance.now();
 
     try {
       const response = await fetch("/api/orchestrate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyword }),
+        body: JSON.stringify({ keyword: targetKeyword }),
       });
 
       const elapsed = (performance.now() - startTime) / 1000;
@@ -301,22 +363,70 @@ export default function Home() {
         score: data.score,
         critique: data.critique,
         message: data.message,
-        status: data.status
+        status: data.status,
+        vaultFolder: data.vaultFolder,
       });
 
       setSlides(data.slides || []);
-      setGeneratedKeyword(data.angle || keyword);
+      setGeneratedKeyword(targetKeyword);
       setGenerationTime(Math.round(elapsed));
       setHookSource("gemini"); // We know it's Gemini
       setState("done");
-      await generateCaptionForSlides(data.slides || [], data.angle || keyword, keyword);
+      await generateCaptionForSlides(data.slides || [], data.angle || targetKeyword, targetKeyword);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Orchestrator failed.";
       setError(message);
       setState("error");
     }
-  }, [keyword]);
+  }, [activeAutomationKeyword, automationKeywords.length, generateCaptionForSlides, keyword]);
+
+  // The Scheduling Timer
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (autoSettings.enabled && nextRunTime) {
+      interval = setInterval(() => {
+        const now = Date.now();
+        if (now >= nextRunTime) {
+          void handleAutopilot();
+          scheduleNextRun();
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [autoSettings.enabled, nextRunTime, handleAutopilot, scheduleNextRun]);
+
+  const handleSendToTelegram = useCallback(async () => {
+    if (!autopilotResult?.vaultFolder) {
+      setTelegramError("No saved vault batch is available to send.");
+      return;
+    }
+
+    setTelegramSending(true);
+    setTelegramError("");
+    setTelegramStatus("Sending Telegram approval request...");
+
+    try {
+      const response = await fetch("/api/telegram/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folder: autopilotResult.vaultFolder }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || data.message || `Telegram send failed: ${response.status}`);
+      }
+
+      setTelegramStatus(data.message || `Sent ${data.folder || autopilotResult.vaultFolder} to Telegram.`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to send Telegram approval request.";
+      setTelegramError(message);
+      setTelegramStatus("");
+    } finally {
+      setTelegramSending(false);
+    }
+  }, [autopilotResult?.vaultFolder]);
 
   const handleFetchMusic = useCallback(async () => {
     setMusicLoading(true);
@@ -683,6 +793,28 @@ export default function Home() {
                 <span style={{ color: '#a1a1aa' }}>Judge's Critique:</span> "{autopilotResult.critique}"
               </p>
               <p style={{ margin: "0", fontSize: '13px', color: '#a1a1aa' }}>{autopilotResult.message}</p>
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '14px' }}>
+                {autopilotResult.vaultFolder && (
+                  <button
+                    className="btn-download"
+                    onClick={handleSendToTelegram}
+                    disabled={telegramSending}
+                    style={{ padding: '10px 18px', fontSize: '13px' }}
+                  >
+                    {telegramSending ? "Sending..." : "📨 Send to Telegram"}
+                  </button>
+                )}
+              </div>
+              {telegramStatus && (
+                <p style={{ margin: '10px 0 0 0', fontSize: '13px', color: '#a1a1aa' }}>
+                  {telegramStatus}
+                </p>
+              )}
+              {telegramError && (
+                <p style={{ margin: '10px 0 0 0', fontSize: '13px', color: '#f87171' }}>
+                  {telegramError}
+                </p>
+              )}
             </div>
           )}
 

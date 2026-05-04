@@ -56,19 +56,78 @@ function isTasteApproved(draft: DraftSequence, evaluation: JudgeResult): boolean
   if (evaluation.score < 9) return false;
   if (!draft.slides || draft.slides.length < 5) return false;
 
-  const hook = draft.slides[0]?.text?.toLowerCase() || "";
+  const hook = draft.slides[0]?.text?.toLowerCase().trim() || "";
   const disallowed = [
     "unlock your potential",
     "change your life",
     "believe in yourself",
     "level up",
     "generic",
+    "corn loop",
+    "journey",
+    "mindset",
+    "future version",
+    "self improvement",
   ];
   if (disallowed.some((phrase) => hook.includes(phrase))) {
     return false;
   }
 
-  return hook.length >= 18;
+  if (!hook.includes("corn")) {
+    return false;
+  }
+
+  const concreteMarkers = [
+    "phone",
+    "screen",
+    "bed",
+    "mirror",
+    "bathroom",
+    "shower",
+    "door",
+    "desk",
+    "chair",
+    "car",
+    "night",
+    "scroll",
+    "tab",
+    "battery",
+    "hands",
+    "face",
+    "breath",
+    "urge",
+    "ashamed",
+    "numb",
+    "staring",
+    "blank",
+    "waste",
+  ];
+
+  const hasConcreteMarker =
+    concreteMarkers.some((word) => hook.includes(word)) ||
+    /\b\d{1,2}(:\d{2})?\s?(am|pm)?\b/.test(hook);
+
+  if (!hasConcreteMarker) {
+    return false;
+  }
+
+  const abstractWords = [
+    "potential",
+    "freedom",
+    "purpose",
+    "journey",
+    "growth",
+    "healing",
+    "version",
+    "future",
+  ];
+
+  const abstractCount = abstractWords.filter((word) => hook.includes(word)).length;
+  if (abstractCount >= 2) {
+    return false;
+  }
+
+  return hook.length >= 22;
 }
 
 /**
@@ -76,45 +135,50 @@ function isTasteApproved(draft: DraftSequence, evaluation: JudgeResult): boolean
  * Takes a broad keyword, researches trendy angles, and generates 3 distinct story arcs.
  */
 export async function brainstormHooks(keyword: string, storyCount: number = 6, researchContext: string = ""): Promise<DraftSequence[]> {
-  const prompt = `Your task: Take the broad keyword "${keyword}" and frame it through the lens of real behavior change and lived struggle.
+  const prompt = `Write 3 distinct story concepts about "${keyword}" and the corn habit behind it.
 
-  ${researchContext ? `GROUNDING DATA (Use these real-world insights from the vault): \n${researchContext}` : ""}
+${researchContext ? `GROUNDING DATA FROM THE VAULT:\n${researchContext}` : ""}
 
-The Persona: 
-You are the world's most elite copywriter, working for JINTA, a brand dedicated to one mission: Saving men from the corn loop. You write with the grit of a Nike campaign and the investigative depth of Forbes. You are visceral, raw, and direct.
+You are writing for JINTA.
 
-CRITICAL MANDATE:
-- SLIDE 1 MUST BE A POWERFUL HOOK. NO ADVERTISING. NO SELLING. NO PROMOTIONAL LANGUAGE.
-- Slide 1 must frame the subject: The visceral reality of corn addiction or the "Corn Loop".
-- Use the keyword "${keyword}" as the NARRATIVE ANGLE for the corn talk. 
-- Every slide must be grounded in the raw, gritty reality of the recovery struggle.
-- Every slide must feel like it came from a real person, not a motivational template.
-- Use concrete moments, feelings, and stakes.
+Voice:
+- direct
+- human
+- sharp
+- scene-based
+- specific
 
-Strategic Pillars (Guidance):
-1. THE VOID: The neuro-cost of the corn loop. How it steals your future.
-2. THE ASCENSION (POV): The freedom waiting after you break the corn attachment.
-3. THE PROTOCOL: Brutally practical steps to stay clean from corn today.
+This is not brand copy.
+This is not a motivational reel.
+This is not a self-help template.
 
-Narrative Structure:
-For EACH of the 3 concepts, write a ${storyCount}-slide story sequence.
-- Tone: Visceral, minimalist, high-prestige. No fluff. No silly TikTok speak besides "Corn".
-- Keep language human and relational. Avoid robotic phrasing and generic advice.
+The reader should feel the sting on the first line.
 
-CRITICAL TIKTOK ALGOSPEAK RULES:
-- "porn" -> "corn"
-- "sex" -> "addiction" or "physical loop"
-- "fuck" -> "f*ck"
-- "addicted" -> "hooked" or "looped"
+Hard rules:
+- Use "corn" directly.
+- Never use the phrase "corn loop".
+- Never write slogans like "unlock your potential", "change your life", "believe in yourself", or "level up".
+- Start every concept in a real place: bed, bathroom, car, desk, mirror, shower, late-night phone, empty room.
+- Each slide must contain one concrete thing, one feeling, and one consequence.
+- Prefer plain words over abstract ones.
+- If a line could fit any generic self-improvement page, reject it.
+- No preaching, no ad copy, no guru language.
+- The subject should feel like a corn habit or corn trap, not a slogan.
 
-Return exactly 3 distinct concepts with their associated ${storyCount} slides, including the "vibe" (dark, motivational, gym, success).`;
+The concepts should feel like:
+1. the urge before the relapse
+2. the shame right after
+3. the decision to stop tonight
+
+Write exactly 3 concepts with exactly ${storyCount} slides each.
+Return JSON only with angle, vibe, and slides.`;
 
   console.log(`[Gemini 2.0] Firing Shot 1: Brainstorming angles for "${keyword}"...`);
   
   const result = await model.generateContent({
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: {
-      temperature: 0.8,
+      temperature: 0.55,
       responseMimeType: "application/json",
       responseSchema: brainstormerSchema,
     }
@@ -125,8 +189,6 @@ Return exactly 3 distinct concepts with their associated ${storyCount} slides, i
   // Programmatic Scrubbing: Force-replace any accidental "porn" or "sex" mentions before parsing
   const cleanJson = rawText
     .replace(/porn/gi, "corn")
-    .replace(/sex/gi, "seggs")
-    .replace(/fucking/gi, "freaking")
     .replace(/fuck/gi, "f*ck");
 
   const drafts: DraftSequence[] = JSON.parse(cleanJson);
@@ -212,6 +274,28 @@ interface StoryCaptionInput {
   slides: Array<{ role?: string; text: string }>;
 }
 
+function ensureJintaHashtag(caption: string): string {
+  const trimmed = caption.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  if (/\#jinta\b/i.test(trimmed)) {
+    return trimmed.replace(/\#jinta\b/gi, "#jinta");
+  }
+
+  const lines = trimmed.split("\n");
+  const lastIndex = lines.length - 1;
+  const lastLine = lines[lastIndex].trim();
+
+  if (lastLine.startsWith("#")) {
+    lines[lastIndex] = `${lastLine} #jinta`;
+    return lines.join("\n").trim();
+  }
+
+  return `${trimmed}\n#jinta`;
+}
+
 function buildFallbackStoryCaption(input: StoryCaptionInput): string {
   const lines = input.slides
     .map((s) => s.text.trim())
@@ -228,7 +312,7 @@ function buildFallbackStoryCaption(input: StoryCaptionInput): string {
     `${middle}`,
     `${shift}`,
     `${close}`,
-    "#storytime #growth #discipline"
+      "#storytime #growth #discipline #jinta"
   ]
     .join("\n")
     .replace(/—/g, "-")
@@ -256,6 +340,7 @@ Rules:
 - Do NOT use em dashes.
 - Keep it concise: 3 to 6 lines max.
 - End with 2 to 5 relevant lowercase hashtags.
+- Include #jinta in the hashtag line.
 - Return JSON only.`;
 
   if (!process.env.GEMINI_API_KEY) {
@@ -274,10 +359,16 @@ Rules:
 
     const raw = result.response.text();
     const parsed = JSON.parse(raw) as { caption?: string };
-    const cleaned = (parsed.caption || "")
+    const rawCaption = (parsed.caption || "")
       .replace(/—/g, "-")
       .replace(/\s+\n/g, "\n")
       .trim();
+
+    if (!rawCaption) {
+      return buildFallbackStoryCaption(input);
+    }
+
+    const cleaned = ensureJintaHashtag(rawCaption);
 
     if (!cleaned) {
       return buildFallbackStoryCaption(input);
@@ -300,10 +391,11 @@ export async function judgeDrafts(drafts: DraftSequence[]): Promise<JudgeResult>
 You must review the following 3 drafted TikTok story sequences.
 
 Your job is to rate them ruthlessly out of 10 based on:
-1. Punchiness: Does the hook physically stop a scrolling user?
-2. Relatability: Does the problem hit hard?
-3. Brand Voice: Is it raw and masculine, or does it sound like a generic life coach?
+1. Specificity: Does the hook describe one real scene instead of an abstract idea?
+2. Relatability: Does the problem feel observed, not invented?
+3. Sensory Truth: Can you see, hear, or feel the moment?
 4. Human Truth: Does it read like lived experience instead of AI copy?
+5. First-glance impact: Does it hit hard immediately without sounding clickbait?
 
 Drafts:
 ${draftsJson}
@@ -311,7 +403,8 @@ ${draftsJson}
 Instructions:
 Select the best draft out of the 3.
 Give it a brutal score out of 10.
-If the best draft STILL scores below an 8/10, you must reject it by returning bestDraftIndex as -1. We do NOT publish mediocre content.
+If the best draft STILL scores below an 8/10, you must reject it by returning bestDraftIndex as -1. We do NOT publish vague or generic content.
+Reject hooks that lean on slogans, abstract motivation, fake intensity, or interchangeable self-help language.
 Provide a 1-sentence gritty critique explaining your decision.
 `;
 

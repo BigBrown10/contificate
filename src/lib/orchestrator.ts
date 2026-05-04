@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { selectDraftWithTaste, JudgeResult } from "./gemini";
+import { selectDraftWithTaste, JudgeResult, generateStoryCaption } from "./gemini";
 import { fetchPortraitPhotos } from "./pexels";
 import { compositeSlide, compositeCtaSlide } from "./compositor";
 import { GeneratedSlide, CTA_SLIDE_TEXT, CTA_SLIDE_SUBTEXT } from "./types";
@@ -14,6 +14,7 @@ export interface OrchestratorResult {
   score?: number;
   critique?: string;
   angle?: string;
+  vaultFolder?: string;
   slides?: GeneratedSlide[];
   message: string;
 }
@@ -49,109 +50,134 @@ export async function runAutopilotPipeline(keyword: string, researchContext: str
 
   console.log(`[Orchestrator] Winner chosen! Score: ${evaluation.score}/10. Angle: ${winningDraft.angle}`);
 
-  // Step 3: Fetch Images & Composite Visuals (Force use of raw keyword to avoid "corn plant" imagery)
-  const expectedSlidesCount = winningDraft.slides.length + 1; // +1 for CTA
-  const photos = await fetchPortraitPhotos(keyword, expectedSlidesCount);
-  
-  if (photos.length < expectedSlidesCount) {
-    return { status: "failed", message: "Pexels failed to return enough images for the sequence." };
-  }
-
-  const generatedSlides: GeneratedSlide[] = [];
-
-  // Generate Story Slides
-  for (let i = 0; i < winningDraft.slides.length; i++) {
-    const photo = photos[i];
-    const storySlide = winningDraft.slides[i];
-    const imageUrl = photo.src.portrait || photo.src.large2x || photo.src.large;
+  try {
+    // Step 3: Fetch Images & Composite Visuals (Force use of raw keyword to avoid "corn plant" imagery)
+    const expectedSlidesCount = winningDraft.slides.length + 1; // +1 for CTA
+    const photos = await fetchPortraitPhotos(keyword, expectedSlidesCount);
     
-    const pngBuffer = await compositeSlide(imageUrl, storySlide.text);
+    if (photos.length < expectedSlidesCount) {
+      return { status: "failed", message: "Pexels failed to return enough images for the sequence." };
+    }
+
+    const generatedSlides: GeneratedSlide[] = [];
+
+    // Generate Story Slides
+    for (let i = 0; i < winningDraft.slides.length; i++) {
+      const photo = photos[i];
+      const storySlide = winningDraft.slides[i];
+      const imageUrl = photo.src.portrait || photo.src.large2x || photo.src.large;
+      
+      const pngBuffer = await compositeSlide(imageUrl, storySlide.text);
+      generatedSlides.push({
+        id: `slide-${i + 1}-${Date.now()}`,
+        hookText: storySlide.text,
+        role: storySlide.role,
+        imageBase64: `data:image/png;base64,${pngBuffer.toString("base64")}`,
+        photographer: photo.photographer,
+      });
+    }
+
+    // Generate CTA Slide
+    const ctaPhoto = photos[winningDraft.slides.length];
+    const ctaImageUrl = ctaPhoto.src.portrait || ctaPhoto.src.large2x || ctaPhoto.src.large;
+    const ctaBuffer = await compositeCtaSlide(ctaImageUrl, CTA_SLIDE_TEXT, CTA_SLIDE_SUBTEXT);
+    
     generatedSlides.push({
-      id: `slide-${i + 1}-${Date.now()}`,
-      hookText: storySlide.text,
-      role: storySlide.role,
-      imageBase64: `data:image/png;base64,${pngBuffer.toString("base64")}`,
-      photographer: photo.photographer,
+      id: `slide-cta-${Date.now()}`,
+      hookText: "Waitlist CTA",
+      role: "cta",
+      imageBase64: `data:image/png;base64,${ctaBuffer.toString("base64")}`,
+      photographer: ctaPhoto.photographer,
     });
-  }
 
-  // Generate CTA Slide
-  const ctaPhoto = photos[winningDraft.slides.length];
-  const ctaImageUrl = ctaPhoto.src.portrait || ctaPhoto.src.large2x || ctaPhoto.src.large;
-  const ctaBuffer = await compositeCtaSlide(ctaImageUrl, CTA_SLIDE_TEXT, CTA_SLIDE_SUBTEXT);
-  
-  generatedSlides.push({
-    id: `slide-cta-${Date.now()}`,
-    hookText: "Waitlist CTA",
-    role: "cta",
-    imageBase64: `data:image/png;base64,${ctaBuffer.toString("base64")}`,
-    photographer: ctaPhoto.photographer,
-  });
+    const captionText = await generateStoryCaption({
+      keyword,
+      angle: winningDraft.angle,
+      slides: generatedSlides.map((slide) => ({
+        role: slide.role,
+        text: slide.hookText,
+      })),
+    });
 
-  // Step 4: Save to Vault, Zip, and Push to Telegram
-  let vaultPath: string | null = null;
-  try {
-    vaultPath = await saveToApprovedVault(keyword, winningDraft.angle, generatedSlides, evaluation);
-  } catch (err) {
-    console.error(`[Orchestrator] Failed to persist vault batch:`, err);
-  }
-  
-  // Fetch matching music
-  let audioUrl: string | undefined;
-  try {
-    const musicTracks = await fetchMusicTracks(winningDraft.vibe, 1, keyword);
-    if (musicTracks.length > 0) audioUrl = musicTracks[0].previewUrl;
-  } catch (err) {
-    console.error(`[Orchestrator] Failed to fetch music for vibe ${winningDraft.vibe}:`, err);
-  }
-
-  // Create ZIP
-  const base64Files = generatedSlides.map((s, i) => ({
-    name: `slide_${i + 1}_${s.role}.png`,
-    base64: s.imageBase64.replace(/^data:image\/png;base64,/, "")
-  }));
-
-  let zipPath: string | null = null;
-  if (vaultPath) {
+    // Step 4: Save to Vault, Zip, and Push to Telegram
+    let vaultPath: string | null = null;
     try {
-      zipPath = await createBatchZip(vaultPath, base64Files, audioUrl);
+      vaultPath = await saveToApprovedVault(keyword, winningDraft.angle, generatedSlides, evaluation, captionText);
     } catch (err) {
-      console.error(`[Orchestrator] Failed to create ZIP:`, err);
+      console.error(`[Orchestrator] Failed to persist vault batch:`, err);
     }
-  }
-
-  // Send to Telegram HITL
-  if (vaultPath && zipPath) {
+    
+    // Fetch matching music
+    let audioUrl: string | undefined;
     try {
-      await sendApprovalRequest(
-        path.basename(vaultPath),
-        zipPath,
-        winningDraft.angle,
-        evaluation.score,
-        evaluation.critique
-      );
+      const musicTracks = await fetchMusicTracks(winningDraft.vibe, 1, keyword);
+      if (musicTracks.length > 0) audioUrl = musicTracks[0].previewUrl;
     } catch (err) {
-      console.error(`[Orchestrator] Failed to send Telegram approval:`, err);
+      console.error(`[Orchestrator] Failed to fetch music for vibe ${winningDraft.vibe}:`, err);
     }
+
+    // Create ZIP
+    const base64Files = generatedSlides.map((s, i) => ({
+      name: `slide_${i + 1}_${s.role}.png`,
+      base64: s.imageBase64.replace(/^data:image\/png;base64,/, "")
+    }));
+
+    let zipPath: string | null = null;
+    if (vaultPath) {
+      try {
+        zipPath = await createBatchZip(vaultPath, base64Files, audioUrl, captionText);
+      } catch (err) {
+        console.error(`[Orchestrator] Failed to create ZIP:`, err);
+      }
+    }
+
+    // Send to Telegram HITL
+    if (vaultPath && zipPath) {
+      try {
+        await sendApprovalRequest(
+          path.basename(vaultPath),
+          zipPath,
+          winningDraft.angle,
+          evaluation.score,
+          evaluation.critique
+        );
+      } catch (err) {
+        console.error(`[Orchestrator] Failed to send Telegram approval:`, err);
+      }
+    }
+
+    return {
+      status: "saved_for_review",
+      score: evaluation.score,
+      critique: evaluation.critique,
+      angle: winningDraft.angle,
+      vaultFolder: vaultPath ? path.basename(vaultPath) : undefined,
+      slides: generatedSlides,
+      message: `Scored ${evaluation.score}/10. Saved to local vault for manual review.`
+    };
+  } catch (err) {
+    console.error(`[Orchestrator] Content pipeline failed:`, err);
+    return {
+      status: "failed",
+      score: evaluation.score,
+      critique: evaluation.critique,
+      angle: winningDraft.angle,
+      message: err instanceof Error ? err.message : "Content pipeline failed during asset generation."
+    };
   }
-
-
-  
-  return {
-    status: "saved_for_review",
-    score: evaluation.score,
-    critique: evaluation.critique,
-    angle: winningDraft.angle,
-    slides: generatedSlides,
-    message: `Scored ${evaluation.score}/10. Saved to local vault for manual review.`
-  };
 }
 
 /**
  * Saves generated content to the local disk (_approved_vault folder).
  * Returns the absolute path of the created folder.
  */
-function saveToApprovedVault(keyword: string, angle: string, slides: GeneratedSlide[], evaluation: JudgeResult): string {
+function saveToApprovedVault(
+  keyword: string,
+  angle: string,
+  slides: GeneratedSlide[],
+  evaluation: JudgeResult,
+  captionText?: string
+): string {
   const vaultDir = getApprovedVaultRoot();
   if (!fs.existsSync(vaultDir)) {
     fs.mkdirSync(vaultDir, { recursive: true });
@@ -175,6 +201,7 @@ function saveToApprovedVault(keyword: string, angle: string, slides: GeneratedSl
     angle,
     score: evaluation.score,
     critique: evaluation.critique,
+    caption: captionText,
     slides: slides.map((slide, index) => ({
       order: index + 1,
       role: slide.role,

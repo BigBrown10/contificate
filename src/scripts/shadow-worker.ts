@@ -54,7 +54,15 @@ async function runShadowCycle() {
     return;
   }
 
-  const latestBatchEntry = fs.readdirSync(vaultDir)
+  const latestBatchEntry = result.vaultFolder
+    ? {
+        name: result.vaultFolder,
+        fullPath: path.join(vaultDir, result.vaultFolder),
+        time: fs.existsSync(path.join(vaultDir, result.vaultFolder))
+          ? fs.statSync(path.join(vaultDir, result.vaultFolder)).mtime.getTime()
+          : Date.now(),
+      }
+    : fs.readdirSync(vaultDir)
     .map(name => ({
       name,
       fullPath: path.join(vaultDir, name),
@@ -72,24 +80,30 @@ async function runShadowCycle() {
 
   const batchPath = path.join(vaultDir, latestBatch);
   const zipFile = fs.readdirSync(batchPath).find(f => f.endsWith(".zip"));
+  let publicUrl: string | null = null;
 
   if (zipFile) {
     console.log(`[ShadowWorker] Uploading ${zipFile} to Supabase...`);
     const zipPath = path.join(batchPath, zipFile);
-    const publicUrl = await uploadZipToStorage(zipPath, `${latestBatch}.zip`);
+    publicUrl = await uploadZipToStorage(zipPath, `${latestBatch}.zip`);
 
     if (publicUrl) {
-      // 5. Save the final record to Supabase DB
-      await saveFinalGeneration(
-        targetKeyword,
-        result.angle || "Experimental",
-        result.slides || [],
-        { bestDraftIndex: 0, score: result.score || 0, critique: result.critique || "" },
-        publicUrl
-      );
       console.log(`[ShadowWorker] Cycle Successful! Public URL: ${publicUrl}`);
+    } else {
+      console.warn("[ShadowWorker] ZIP upload failed; saving generation record without a public URL.");
     }
+  } else {
+    console.warn("[ShadowWorker] No ZIP file found in batch; saving generation record without a public URL.");
   }
+
+  // 5. Save the final record to Supabase DB even if storage upload fails.
+  await saveFinalGeneration(
+    targetKeyword,
+    result.angle || "Experimental",
+    result.slides || [],
+    { bestDraftIndex: 0, score: result.score || 0, critique: result.critique || "" },
+    publicUrl || undefined
+  );
 
   console.log(`[ShadowWorker] Shadow cycle complete.`);
 }

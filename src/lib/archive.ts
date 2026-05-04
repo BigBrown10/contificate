@@ -4,13 +4,14 @@ import path from "path";
 import archiver from "archiver";
 
 /**
- * Creates a ZIP file containing the specified images and MP3 file.
+ * Creates a ZIP file containing the specified images, optional caption text, and MP3 file.
  * Returns the path to the newly created ZIP file.
  */
 export async function createBatchZip(
   folderPath: string,
   imageFiles: { name: string; base64: string }[],
-  audioResourceUrl?: string
+  audioResourceUrl?: string,
+  captionText?: string
 ): Promise<string> {
   return new Promise(async (resolve, reject) => {
     const zipPath = path.join(folderPath, "tiktok-batch.zip");
@@ -30,6 +31,10 @@ export async function createBatchZip(
     // Append images
     for (const image of imageFiles) {
       archive.append(Buffer.from(image.base64, "base64"), { name: image.name });
+    }
+
+    if (captionText && captionText.trim().length > 0) {
+      archive.append(Buffer.from(captionText.trim() + "\n", "utf8"), { name: "caption.txt" });
     }
 
     // Download and append audio

@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     const absoluteSlidePaths = files.map(file => path.join(vaultPath, file));
 
     const metadataPath = path.join(vaultPath, "metadata.json");
-    let caption = `today's story in one line: change starts with one honest decision\n\n#${(keyword || "mindset").replace(/\s+/g, "").toLowerCase()} #discipline #growth #storytime`;
+    let caption = `today's story in one line: change starts with one honest decision\n\n#${(keyword || "mindset").replace(/\s+/g, "").toLowerCase()} #discipline #growth #storytime #jinta`;
 
     if (fs.existsSync(metadataPath)) {
       try {
@@ -29,13 +29,16 @@ export async function POST(request: NextRequest) {
         const metadata = JSON.parse(metadataRaw) as {
           keyword?: string;
           angle?: string;
+          caption?: string;
           slides?: Array<{ role?: string; text?: string }>;
         };
         const slidePayload = (metadata.slides || [])
           .filter((s) => typeof s.text === "string" && s.text.trim().length > 0)
           .map((s) => ({ role: s.role, text: s.text as string }));
 
-        if (slidePayload.length > 0) {
+        if (typeof metadata.caption === "string" && metadata.caption.trim().length > 0) {
+          caption = metadata.caption;
+        } else if (slidePayload.length > 0) {
           caption = await generateStoryCaption({
             keyword: metadata.keyword || keyword || "mindset",
             angle: metadata.angle,
