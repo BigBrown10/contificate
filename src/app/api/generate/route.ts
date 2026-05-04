@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
+import { fetchPortraitPhotos } from "@/lib/pexels";
 import { GenerateError } from "@/lib/types";
 import { selectDraftWithTaste } from "@/lib/gemini";
 import { fetchMusicTracks } from "@/lib/freesound";
@@ -80,6 +81,12 @@ export async function POST(request: NextRequest) {
       `[Generate] Using Gemini 2.0 hooks: ${storySlides.length} story + 1 CTA`
     );
 
+    // 2. Fetch a distinct image batch for this generation.
+    const photos = await fetchPortraitPhotos(keyword, countWithCta);
+    if (photos.length < countWithCta) {
+      throw new Error("Not enough distinct images were found for this batch.");
+    }
+
     // 3. Auto-fetch matching music
     let selectedMusic = null;
     if (!isVercel) {
@@ -97,6 +104,10 @@ export async function POST(request: NextRequest) {
         keyword,
         winningAngle: winningDraft.angle,
         storySlides, // Text hooks and roles
+        photos: photos.map(p => ({
+          url: p.src.portrait || p.src.large2x || p.src.large,
+          photographer: p.photographer
+        })),
         musicTrack: selectedMusic,
         generatedAt: new Date().toISOString(),
         hookSource: "gemini",
