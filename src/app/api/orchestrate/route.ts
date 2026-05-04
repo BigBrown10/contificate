@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { runAutopilotPipeline } from "@/lib/orchestrator";
 
 // Allow lengthy processing time (Vercel max is usually 60s without Edge/Pro, but this covers local)
+// Configured in vercel.json for Pro tier support with abort timeouts on external API calls
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
