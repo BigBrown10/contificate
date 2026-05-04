@@ -1,15 +1,24 @@
 import fs from "fs";
 
+type TelegramZipSource = string | Buffer | Uint8Array;
+
+interface SendApprovalOptions {
+  zipFileName?: string;
+  includeActions?: boolean;
+  messageOverride?: string;
+}
+
 /**
  * Sends the generated ZIP package to Telegram for Human-in-the-Loop review.
  * Includes an inline keyboard to Approve/Post or Reject.
  */
 export async function sendApprovalRequest(
   vaultFolderName: string,
-  zipPath: string,
+  zipPath: TelegramZipSource,
   angle: string,
   score: number,
-  critique: string
+  critique: string,
+  options: SendApprovalOptions = {}
 ): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -19,7 +28,7 @@ export async function sendApprovalRequest(
     return;
   }
 
-  if (!fs.existsSync(zipPath)) {
+  if (typeof zipPath === "string" && !fs.existsSync(zipPath)) {
     console.error(`[Telegram] ZIP file missing at path: ${zipPath}`);
     return;
   }
@@ -30,7 +39,7 @@ export async function sendApprovalRequest(
       .trim()
       .slice(0, 300);
     const caption = [
-      "JINTA Orchestrator: Ready for HITL review",
+      options.messageOverride || "JINTA Orchestrator: Ready for HITL review",
       `Angle: ${angle}`,
       `Judge Score: ${score}/10`,
       `Critique: ${safeCritique}`,
@@ -40,22 +49,29 @@ export async function sendApprovalRequest(
     ].join("\n");
 
     const formData = new FormData();
-    const fileBuffer = await fs.promises.readFile(zipPath);
+    const fileBuffer = typeof zipPath === "string"
+      ? await fs.promises.readFile(zipPath)
+      : Buffer.isBuffer(zipPath)
+        ? zipPath
+        : Buffer.from(zipPath);
     const zipBlob = new Blob([fileBuffer], { type: "application/zip" });
+    const fileName = options.zipFileName || "tiktok-batch.zip";
 
     formData.append("chat_id", chatId);
     formData.append("caption", caption.slice(0, 1000));
-    formData.append("document", zipBlob, "tiktok-batch.zip");
-    
-    const inlineKeyboard = {
-      inline_keyboard: [
-        [
-          { text: "👍 Approve & Auto-Post (Stealth)", callback_data: `approve_${vaultFolderName}` },
-          { text: "👎 Reject", callback_data: `reject_${vaultFolderName}` }
+    formData.append("document", zipBlob, fileName);
+
+    if (options.includeActions !== false) {
+      const inlineKeyboard = {
+        inline_keyboard: [
+          [
+            { text: "👍 Approve & Auto-Post (Stealth)", callback_data: `approve_${vaultFolderName}` },
+            { text: "👎 Reject", callback_data: `reject_${vaultFolderName}` }
+          ]
         ]
-      ]
-    };
-    formData.append("reply_markup", JSON.stringify(inlineKeyboard));
+      };
+      formData.append("reply_markup", JSON.stringify(inlineKeyboard));
+    }
 
     console.log(`[Telegram] Sending ZIP to Chat ID ${chatId}...`);
 
