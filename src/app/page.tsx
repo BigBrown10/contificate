@@ -257,6 +257,9 @@ export default function Home() {
     const targetKeyword = targetKeywordInput.trim();
     if (!targetKeyword) return null;
 
+    const isLocalHost = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+    const effectiveCount = isLocalHost ? requestedCount : Math.min(requestedCount, 4);
+
     setState("loading");
     setError("");
     setAutopilotResult(null);
@@ -273,7 +276,7 @@ export default function Home() {
       const planResponse = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyword: targetKeyword, count: requestedCount }),
+        body: JSON.stringify({ keyword: targetKeyword, count: effectiveCount }),
       });
 
       const planPayload = await readResponsePayload<{ plan?: any; error?: string; message?: string }>(planResponse);
