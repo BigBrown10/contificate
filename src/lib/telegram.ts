@@ -54,7 +54,11 @@ export async function sendApprovalRequest(
       : Buffer.isBuffer(zipPath)
         ? zipPath
         : Buffer.from(zipPath);
-    const zipBlob = new Blob([fileBuffer], { type: "application/zip" });
+    // Convert to Uint8Array and then to a plain ArrayBuffer slice to satisfy
+    // TypeScript's strict BlobPart typing across Node Buffer vs browser types.
+    const uint8 = fileBuffer instanceof Uint8Array ? fileBuffer : new Uint8Array(fileBuffer as any);
+    const arrBuf = (uint8.buffer as ArrayBuffer).slice(uint8.byteOffset, uint8.byteOffset + uint8.byteLength);
+    const zipBlob = new Blob([arrBuf], { type: "application/zip" });
     const fileName = options.zipFileName || "tiktok-batch.zip";
 
     formData.append("chat_id", chatId);
