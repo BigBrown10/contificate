@@ -403,7 +403,7 @@ export default function Home() {
     const isLocalHost = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
     if (!isLocalHost) {
-      const previewCount = Math.min(count, 6);
+      const previewCount = Math.min(count, 4);
       const previewResult = await runGenerationFlow(targetKeyword, previewCount);
 
       if (previewResult) {

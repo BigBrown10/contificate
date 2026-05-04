@@ -13,7 +13,10 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const keyword: string = body.keyword?.trim();
-    const count: number = Math.min(Math.max(body.count || 5, 2), 20);
+    const isVercel = Boolean(process.env.VERCEL);
+    const count: number = isVercel
+      ? Math.min(Math.max(body.count || 5, 2), 4)
+      : Math.min(Math.max(body.count || 5, 2), 20);
 
     // --- KNOWLEDGE BASE RETRIEVAL: relevance + source diversity ---
     const keywordTokens = keyword
@@ -67,7 +70,12 @@ export async function POST(request: NextRequest) {
 
     // 1. Generate story hooks via Gemini 2.5 (High-IQ Narrative Engine)
     const storyTargetCount = count - 1;
-     const { draft: winningDraft } = await selectDraftWithTaste(keyword, storyTargetCount, researchContext, 3);
+     const { draft: winningDraft } = await selectDraftWithTaste(
+      keyword,
+      storyTargetCount,
+      researchContext,
+      isVercel ? 1 : 3
+    );
     const storySlides = winningDraft.slides; 
     const countWithCta = storySlides.length + 1; 
     const hookSource = "gemini";
@@ -81,11 +89,13 @@ export async function POST(request: NextRequest) {
 
     // 3. Auto-fetch matching music
     let selectedMusic = null;
-    try {
-      const tracks = await fetchMusicTracks(winningDraft.vibe || "dark", 1, keyword);
-      if (tracks.length > 0) selectedMusic = tracks[0];
-    } catch (err) {
-      console.error("Failed to auto-fetch music:", err);
+    if (!isVercel) {
+      try {
+        const tracks = await fetchMusicTracks(winningDraft.vibe || "dark", 1, keyword);
+        if (tracks.length > 0) selectedMusic = tracks[0];
+      } catch (err) {
+        console.error("Failed to auto-fetch music:", err);
+      }
     }
 
     // Return the "Plan" for the frontend to process one-by-one

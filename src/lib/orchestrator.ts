@@ -30,7 +30,7 @@ export async function runAutopilotPipeline(keyword: string, researchContext: str
   let winningDraft;
   let evaluation: JudgeResult;
   try {
-    const selection = await selectDraftWithTaste(keyword, 6, researchContext, 3);
+    const selection = await selectDraftWithTaste(keyword, 6, researchContext, process.env.VERCEL ? 1 : 3);
     winningDraft = selection.draft;
     evaluation = selection.evaluation;
   } catch (err) {
