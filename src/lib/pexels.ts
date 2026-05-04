@@ -211,21 +211,28 @@ async function searchPexels(
       size: "large",
     });
 
-    const response = await fetch(`${PEXELS_API_BASE}/search?${params}`, {
-      headers: { Authorization: apiKey },
-      next: { revalidate: 3600 },
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s timeout
+    try {
+      const response = await fetch(`${PEXELS_API_BASE}/search?${params}`, {
+        headers: { Authorization: apiKey },
+        next: { revalidate: 3600 },
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        throw new Error("Pexels rate limit reached (200 req/hr).");
+      if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error("Pexels rate limit reached (200 req/hr).");
+        }
+        throw new Error(`Pexels API error ${response.status}`);
       }
-      throw new Error(`Pexels API error ${response.status}`);
-    }
 
-    const data: PexelsSearchResponse = await response.json();
-    collected.push(...(data.photos || []));
-    if (!data.next_page) break;
+      const data: PexelsSearchResponse = await response.json();
+      collected.push(...(data.photos || []));
+      if (!data.next_page) break;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   return collected;
@@ -258,32 +265,40 @@ async function searchPixabay(query: string, perPage: number): Promise<PexelsPhot
     page: "1",
   });
 
-  const response = await fetch(`${PIXABAY_API_BASE}/?${params}`);
-  if (!response.ok) return [];
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+  try {
+    const response = await fetch(`${PIXABAY_API_BASE}/?${params}`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) return [];
 
-  const data: PixabayResponse = await response.json();
-  return (data.hits || []).map((hit) => ({
-    id: Number(`2${hit.id}`),
-    width: hit.imageWidth || 1080,
-    height: hit.imageHeight || 1920,
-    url: hit.largeImageURL || hit.webformatURL,
-    photographer: hit.user || "Pixabay",
-    photographer_url: `https://pixabay.com/users/${hit.user || ""}-${hit.user_id || ""}/`,
-    photographer_id: hit.user_id || 0,
-    avg_color: "#111111",
-    src: {
-      original: hit.largeImageURL || hit.webformatURL,
-      large2x: hit.largeImageURL || hit.webformatURL,
-      large: hit.webformatURL || hit.largeImageURL,
-      medium: hit.webformatURL || hit.largeImageURL,
-      small: hit.webformatURL || hit.largeImageURL,
-      portrait: hit.largeImageURL || hit.webformatURL,
-      landscape: hit.webformatURL || hit.largeImageURL,
-      tiny: hit.webformatURL || hit.largeImageURL,
-    },
-    liked: false,
-    alt: hit.tags || "pixabay image",
-  }));
+    const data: PixabayResponse = await response.json();
+    return (data.hits || []).map((hit) => ({
+      id: Number(`2${hit.id}`),
+      width: hit.imageWidth || 1080,
+      height: hit.imageHeight || 1920,
+      url: hit.largeImageURL || hit.webformatURL,
+      photographer: hit.user || "Pixabay",
+      photographer_url: `https://pixabay.com/users/${hit.user || ""}-${hit.user_id || ""}/`,
+      photographer_id: hit.user_id || 0,
+      avg_color: "#111111",
+      src: {
+        original: hit.largeImageURL || hit.webformatURL,
+        large2x: hit.largeImageURL || hit.webformatURL,
+        large: hit.webformatURL || hit.largeImageURL,
+        medium: hit.webformatURL || hit.largeImageURL,
+        small: hit.webformatURL || hit.largeImageURL,
+        portrait: hit.largeImageURL || hit.webformatURL,
+        landscape: hit.webformatURL || hit.largeImageURL,
+        tiny: hit.webformatURL || hit.largeImageURL,
+      },
+      liked: false,
+      alt: hit.tags || "pixabay image",
+    }));
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 interface UnsplashResponse {
@@ -318,36 +333,43 @@ async function searchUnsplash(query: string, perPage: number): Promise<PexelsPho
     content_filter: "high",
   });
 
-  const response = await fetch(`${UNSPLASH_API_BASE}?${params}`, {
-    headers: {
-      Authorization: `Client-ID ${unsplashKey}`,
-    },
-  });
-  if (!response.ok) return [];
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+  try {
+    const response = await fetch(`${UNSPLASH_API_BASE}?${params}`, {
+      headers: {
+        Authorization: `Client-ID ${unsplashKey}`,
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) return [];
 
-  const data: UnsplashResponse = await response.json();
-  return (data.results || []).map((item, index) => ({
-    id: Number(`3${index}${Math.abs(hashCode(item.id))}`),
-    width: item.width || 1080,
-    height: item.height || 1920,
-    url: item.urls.full || item.urls.regular,
-    photographer: item.user?.name || "Unsplash",
-    photographer_url: `https://unsplash.com/@${item.user?.username || ""}`,
-    photographer_id: 0,
-    avg_color: "#101010",
-    src: {
-      original: item.urls.raw || item.urls.full,
-      large2x: item.urls.full || item.urls.regular,
-      large: item.urls.regular || item.urls.full,
-      medium: item.urls.regular || item.urls.small,
-      small: item.urls.small || item.urls.thumb,
-      portrait: item.urls.regular || item.urls.full,
-      landscape: item.urls.regular || item.urls.full,
-      tiny: item.urls.thumb || item.urls.small,
-    },
-    liked: false,
-    alt: item.alt_description || "unsplash image",
-  }));
+    const data: UnsplashResponse = await response.json();
+    return (data.results || []).map((item, index) => ({
+      id: Number(`3${index}${Math.abs(hashCode(item.id))}`),
+      width: item.width || 1080,
+      height: item.height || 1920,
+      url: item.urls.full || item.urls.regular,
+      photographer: item.user?.name || "Unsplash",
+      photographer_url: `https://unsplash.com/@${item.user?.username || ""}`,
+      photographer_id: 0,
+      avg_color: "#101010",
+      src: {
+        original: item.urls.raw || item.urls.full,
+        large2x: item.urls.full || item.urls.regular,
+        large: item.urls.regular || item.urls.full,
+        medium: item.urls.regular || item.urls.small,
+        small: item.urls.small || item.urls.thumb,
+        portrait: item.urls.regular || item.urls.full,
+        landscape: item.urls.regular || item.urls.full,
+        tiny: item.urls.thumb || item.urls.small,
+      },
+      liked: false,
+      alt: item.alt_description || "unsplash image",
+    }));
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function hashCode(input: string): number {
