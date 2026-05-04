@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 import { generateStoryCaption } from "@/lib/gemini";
 
