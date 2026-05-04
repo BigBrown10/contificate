@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
-import { fetchPortraitPhotos } from "@/lib/pexels";
-import { compositeSlide, compositeCtaSlide } from "@/lib/compositor";
-import { CTA_SLIDE_TEXT, CTA_SLIDE_SUBTEXT, GeneratedSlide, GenerateResponse, GenerateError } from "@/lib/types";
+import { GenerateError } from "@/lib/types";
 import { selectDraftWithTaste } from "@/lib/gemini";
 import { fetchMusicTracks } from "@/lib/freesound";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
@@ -14,9 +12,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const keyword: string = body.keyword?.trim();
     const isVercel = Boolean(process.env.VERCEL);
-    const count: number = isVercel
-      ? Math.min(Math.max(body.count || 5, 2), 4)
-      : Math.min(Math.max(body.count || 5, 2), 20);
+    const count: number = Math.min(Math.max(body.count || 5, 2), 20);
 
     // --- KNOWLEDGE BASE RETRIEVAL: relevance + source diversity ---
     const keywordTokens = keyword
@@ -84,9 +80,6 @@ export async function POST(request: NextRequest) {
       `[Generate] Using Gemini 2.0 hooks: ${storySlides.length} story + 1 CTA`
     );
 
-    // 2. Fetch photos from Pexels (Force raw keyword for imagery)
-    const photos = await fetchPortraitPhotos(keyword, countWithCta);
-
     // 3. Auto-fetch matching music
     let selectedMusic = null;
     if (!isVercel) {
@@ -104,10 +97,6 @@ export async function POST(request: NextRequest) {
         keyword,
         winningAngle: winningDraft.angle,
         storySlides, // Text hooks and roles
-        photos: photos.map(p => ({
-          url: p.src.portrait || p.src.large2x || p.src.large,
-          photographer: p.photographer
-        })),
         musicTrack: selectedMusic,
         generatedAt: new Date().toISOString(),
         hookSource: "gemini",

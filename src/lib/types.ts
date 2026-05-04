@@ -68,11 +68,11 @@ export interface GenerationPlan {
   keyword: string;
   winningAngle: string;
   storySlides: StorySlide[];
-  photos: {
+  photos?: {
     url: string;
     photographer: string;
   }[];
-  musicTrack: FreesoundTrack | null;
+  musicTrack?: FreesoundTrack | null;
   generatedAt: string;
   hookSource: string;
 }

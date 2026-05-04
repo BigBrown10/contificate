@@ -258,7 +258,6 @@ export default function Home() {
     if (!targetKeyword) return null;
 
     const isLocalHost = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-    const effectiveCount = isLocalHost ? requestedCount : Math.min(requestedCount, 4);
 
     setState("loading");
     setError("");
@@ -276,7 +275,7 @@ export default function Home() {
       const planResponse = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyword: targetKeyword, count: effectiveCount }),
+        body: JSON.stringify({ keyword: targetKeyword, count: requestedCount }),
       });
 
       const planPayload = await readResponsePayload<{ plan?: any; error?: string; message?: string }>(planResponse);
@@ -308,16 +307,14 @@ export default function Home() {
       for (let i = 0; i < plan.storySlides.length; i++) {
         setLoadingMessage(`Step 2: Processing Slide ${i + 1} of ${totalSlides}...`);
         const hook = plan.storySlides[i];
-        const photo = plan.photos[i];
 
         const res = await fetch("/api/generate/process", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            imageUrl: photo.url,
+            keyword: plan.keyword,
             text: hook.text,
             role: hook.role,
-            photographer: photo.photographer
           }),
         });
 
@@ -339,10 +336,9 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          imageUrl: ctaPhoto.url,
+          keyword: plan.keyword,
           text: "JINTA ENGINE PRO", // Default seed
           role: "cta",
-          photographer: ctaPhoto.photographer
         }),
       });
 
@@ -406,7 +402,7 @@ export default function Home() {
     const isLocalHost = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
     if (!isLocalHost) {
-      const previewCount = Math.min(count, 4);
+      const previewCount = count;
       const previewResult = await runGenerationFlow(targetKeyword, previewCount);
 
       if (previewResult) {
