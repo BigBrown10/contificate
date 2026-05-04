@@ -128,6 +128,7 @@ export default function Home() {
     message?: string;
     status?: string;
     vaultFolder?: string;
+    mode?: "full" | "preview";
   } | null>(null);
   const [telegramSending, setTelegramSending] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState("");
@@ -252,8 +253,9 @@ export default function Home() {
     fetchSwarmState();
   }, [fetchSwarmState]);
 
-  const handleGenerate = useCallback(async () => {
-    if (!keyword.trim()) return;
+  const runGenerationFlow = useCallback(async (targetKeywordInput: string, requestedCount: number) => {
+    const targetKeyword = targetKeywordInput.trim();
+    if (!targetKeyword) return null;
 
     setState("loading");
     setError("");
@@ -271,7 +273,7 @@ export default function Home() {
       const planResponse = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyword: keyword.trim(), count }),
+        body: JSON.stringify({ keyword: targetKeyword, count: requestedCount }),
       });
 
       const planPayload = await readResponsePayload<{ plan?: any; error?: string; message?: string }>(planResponse);
@@ -356,12 +358,23 @@ export default function Home() {
       setState("done");
       await generateCaptionForSlides(processedSlides, plan.winningAngle, plan.keyword);
 
+      return {
+        keyword: plan.keyword,
+        angle: plan.winningAngle,
+        slides: processedSlides,
+      };
+
     } catch (err) {
       const message = err instanceof Error ? err.message : "Waterfall generation failed.";
       setError(message);
       setState("error");
+      return null;
     }
-  }, [keyword, count]);
+  }, [generateCaptionForSlides]);
+
+  const handleGenerate = useCallback(async () => {
+    await runGenerationFlow(keyword, count);
+  }, [count, keyword, runGenerationFlow]);
 
   const handleAutopilot = useCallback(async () => {
     const targetKeyword = activeAutomationKeyword || keyword.trim();
@@ -387,6 +400,25 @@ export default function Home() {
     }
 
     const startTime = performance.now();
+    const isLocalHost = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+    if (!isLocalHost) {
+      const previewCount = Math.min(count, 6);
+      const previewResult = await runGenerationFlow(targetKeyword, previewCount);
+
+      if (previewResult) {
+        setAutopilotResult({
+          status: "preview",
+          mode: "preview",
+          message: previewCount < count
+            ? `Generated a ${previewCount}-slide preview to avoid deployment timeouts.`
+            : "Generated a deployed preview batch.",
+          vaultFolder: undefined,
+        });
+      }
+
+      return;
+    }
 
     try {
       const response = await fetch("/api/orchestrate", {
@@ -427,6 +459,7 @@ export default function Home() {
         critique: data.critique,
         message: data.message,
         status: data.status,
+        mode: "full",
         vaultFolder: data.vaultFolder,
       });
 
@@ -442,7 +475,7 @@ export default function Home() {
       setError(message);
       setState("error");
     }
-  }, [activeAutomationKeyword, automationKeywords.length, generateCaptionForSlides, keyword]);
+  }, [activeAutomationKeyword, automationKeywords.length, count, keyword, runGenerationFlow]);
 
   // The Scheduling Timer
   useEffect(() => {
@@ -835,30 +868,48 @@ export default function Home() {
             <div style={{
               padding: "16px 20px",
               marginBottom: "24px",
-              background: autopilotResult.score && autopilotResult.score >= 9 ? "rgba(16, 185, 129, 0.1)" : "rgba(245, 158, 11, 0.1)",
-              border: `1px solid ${autopilotResult.score && autopilotResult.score >= 9 ? "rgba(16, 185, 129, 0.3)" : "rgba(245, 158, 11, 0.3)"}`,
+              background: autopilotResult.mode === "preview"
+                ? "rgba(59, 130, 246, 0.1)"
+                : autopilotResult.score && autopilotResult.score >= 9 ? "rgba(16, 185, 129, 0.1)" : "rgba(245, 158, 11, 0.1)",
+              border: `1px solid ${autopilotResult.mode === "preview"
+                ? "rgba(59, 130, 246, 0.3)"
+                : autopilotResult.score && autopilotResult.score >= 9 ? "rgba(16, 185, 129, 0.3)" : "rgba(245, 158, 11, 0.3)"}`,
               borderRadius: "12px",
               color: "#d4d4dc",
               fontFamily: "Inter, sans-serif"
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                 <span style={{ fontSize: '18px' }}>🚀</span>
-                <strong style={{ color: '#fff' }}>Autopilot Results: {autopilotResult.score}/10</strong>
+                <strong style={{ color: '#fff' }}>
+                  {autopilotResult.mode === "preview" || autopilotResult.score == null
+                    ? "Autopilot Preview"
+                    : `Autopilot Results: ${autopilotResult.score}/10`}
+                </strong>
                 <span style={{ 
                   marginLeft: 'auto', 
-                  background: autopilotResult.status === 'posted' ? '#10b981' : '#3f3f46', 
+                  background: autopilotResult.status === 'posted'
+                    ? '#10b981'
+                    : autopilotResult.mode === 'preview'
+                      ? '#2563eb'
+                      : '#3f3f46', 
                   padding: '4px 8px', 
                   borderRadius: '4px', 
                   fontSize: '12px',
                   fontWeight: 600,
                   color: 'white'
                 }}>
-                  {autopilotResult.status === 'posted' ? "TikTok Posted" : "Saved to Vault"}
+                  {autopilotResult.status === 'posted'
+                    ? "TikTok Posted"
+                    : autopilotResult.mode === 'preview'
+                      ? "Preview Mode"
+                      : "Saved to Vault"}
                 </span>
               </div>
-              <p style={{ margin: "0 0 4px 0", fontSize: '14px' }}>
-                <span style={{ color: '#a1a1aa' }}>Judge's Critique:</span> "{autopilotResult.critique}"
-              </p>
+              {autopilotResult.critique && (
+                <p style={{ margin: "0 0 4px 0", fontSize: '14px' }}>
+                  <span style={{ color: '#a1a1aa' }}>Judge's Critique:</span> "{autopilotResult.critique}"
+                </p>
+              )}
               <p style={{ margin: "0", fontSize: '13px', color: '#a1a1aa' }}>{autopilotResult.message}</p>
               <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '14px' }}>
                 {autopilotResult.vaultFolder && (
