@@ -109,123 +109,106 @@ interface PastGeneration {
 
 export default function Home() {
   const [keyword, setKeyword] = useState("");
-  const handleAutopilot = useCallback(async () => {
-    const targetKeyword = activeAutomationKeyword || keyword.trim();
-    if (!targetKeyword) return;
+  const [count, setCount] = useState(10);
+  const [state, setState] = useState<AppState>("idle");
+  const [slides, setSlides] = useState<GeneratedSlide[]>([]);
+  const [error, setError] = useState("");
+  const [loadingMessage, setLoadingMessage] = useState("");
+  const [generatedKeyword, setGeneratedKeyword] = useState("");
+  const [generationTime, setGenerationTime] = useState(0);
+  const [hookSource, setHookSource] = useState<"gemini" | "fallback" | null>(null);
+  const [captionText, setCaptionText] = useState("");
+  const [captionLoading, setCaptionLoading] = useState(false);
+  const [captionError, setCaptionError] = useState("");
+  const [captionCopied, setCaptionCopied] = useState(false);
+  const [researchSources, setResearchSources] = useState<any[]>([]); // Attribution
+  const [autopilotResult, setAutopilotResult] = useState<{
+    score?: number;
+    critique?: string;
+    message?: string;
+    status?: string;
+    vaultFolder?: string;
+    mode?: "full" | "preview";
+  } | null>(null);
+  const [telegramSending, setTelegramSending] = useState(false);
+  const [telegramStatus, setTelegramStatus] = useState("");
+  const [telegramError, setTelegramError] = useState("");
 
-    setState("loading");
-    setError("");
-    setAutopilotResult(null);
-    setSlides([]);
-    setCaptionText("");
-    setCaptionError("");
-    setCaptionCopied(false);
-    setTelegramStatus("");
-    setTelegramError("");
-    setLoadingMessage(
-      activeAutomationKeyword
-        ? `Agent Cabal spinning up for "${targetKeyword}"...`
-        : "Agent Cabal spinning up..."
-    );
-
-    if (automationKeywords.length > 0) {
-      setAutomationKeywordIndex((current) => (current + 1) % automationKeywords.length);
+  // Automation State
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [nextRunTime, setNextRunTime] = useState<number | null>(null);
+  const [automationKeywordIndex, setAutomationKeywordIndex] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    const saved = Number(localStorage.getItem("jinta_auto_keyword_index"));
+    return Number.isFinite(saved) && saved >= 0 ? Math.floor(saved) : 0;
+  });
+  const [autoSettings, setAutoSettings] = useState<AutomationSettings>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("jinta_auto_settings");
+      return saved ? normalizeAutomationSettings(JSON.parse(saved)) : DEFAULT_AUTOMATION_SETTINGS;
     }
+    return DEFAULT_AUTOMATION_SETTINGS;
+  });
 
-    const startTime = performance.now();
-    const isLocalHost = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+  const automationKeywords = parseAutomationKeywords(autoSettings.keywordList);
+  const activeAutomationKeyword = automationKeywords.length > 0
+    ? automationKeywords[automationKeywordIndex % automationKeywords.length]
+    : "";
+  const automationKeywordSignatureRef = useRef<string | null>(null);
 
-    if (!isLocalHost) {
-      const previewCount = Math.min(count, 6);
-      const previewResult = await runGenerationFlow(targetKeyword, previewCount);
+  const scheduleNextRun = useCallback(() => {
+    const baseMs = autoSettings.intervalHours * 60 * 60 * 1000;
+    const jitterMs = (Math.random() * 2 - 1) * autoSettings.randomOffsetMins * 60 * 1000;
+    const finalMs = Math.max(60000, baseMs + jitterMs); // At least 1 min
+    setNextRunTime(Date.now() + finalMs);
+  }, [autoSettings.intervalHours, autoSettings.randomOffsetMins]);
 
-      if (previewResult) {
-        setAutopilotResult({
-          status: "preview",
-          mode: "preview",
-          message: previewCount < count
-            ? `Generated a ${previewCount}-slide preview to avoid deployment timeouts.`
-            : "Generated a deployed preview batch.",
-          vaultFolder: undefined,
-        });
+  // Save settings
+  useEffect(() => {
+    localStorage.setItem("jinta_auto_settings", JSON.stringify(autoSettings));
+    if (!autoSettings.enabled) {
+      setNextRunTime(null);
+    } else if (!nextRunTime) {
+      scheduleNextRun();
+    }
+  }, [autoSettings]);
 
-        if (previewResult.caption) {
-          const telegramOutcome = await handleSendToTelegram({
-            slides: previewResult.slides,
-            caption: previewResult.caption,
-            keyword: previewResult.keyword,
-            angle: previewResult.angle,
-          });
+  useEffect(() => {
+    localStorage.setItem("jinta_auto_keyword_index", String(automationKeywordIndex));
+  }, [automationKeywordIndex]);
 
-          if (telegramOutcome?.ok) {
-            setAutopilotResult((current) => current ? {
-              ...current,
-              message: telegramOutcome.message || current.message,
-            } : current);
-          }
-        }
-      }
-
+  useEffect(() => {
+    const signature = automationKeywords.join("|");
+    if (automationKeywordSignatureRef.current === null) {
+      automationKeywordSignatureRef.current = signature;
       return;
     }
 
-    try {
-      const response = await fetch("/api/orchestrate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyword: targetKeyword }),
-      });
-
-      const elapsed = (performance.now() - startTime) / 1000;
-
-      const payload = await readResponsePayload<{
-        status?: string;
-        score?: number;
-        critique?: string;
-        message?: string;
-        angle?: string;
-        slides?: GeneratedSlide[];
-        vaultFolder?: string;
-        error?: string;
-      }>(response);
-      
-      if (!response.ok) {
-        throw new Error(getResponseErrorMessage(payload, `Server error: ${response.status}`));
-      }
-
-      if (!payload.data) {
-        throw new Error(payload.rawText || "Autopilot returned an invalid response.");
-      }
-
-      const data = payload.data;
-
-      if (data.status === "failed") {
-        throw new Error(`Pipeline Failed: ${data.message} ${data.critique ? '(' + data.critique + ')' : ''}`);
-      }
-
-      setAutopilotResult({
-        score: data.score,
-        critique: data.critique,
-        message: data.message,
-        status: data.status,
-        mode: "full",
-        vaultFolder: data.vaultFolder,
-      });
-
-      setSlides(data.slides || []);
-      setGeneratedKeyword(targetKeyword);
-      setGeneratedAngle(data.angle || targetKeyword);
-      setGenerationTime(Math.round(elapsed));
-      setHookSource("gemini"); // We know it's Gemini
-      setState("done");
-      await generateCaptionForSlides(data.slides || [], data.angle || targetKeyword, targetKeyword);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Orchestrator failed.";
-      setError(message);
-      setState("error");
+    if (automationKeywordSignatureRef.current !== signature) {
+      automationKeywordSignatureRef.current = signature;
+      setAutomationKeywordIndex(0);
     }
-  }, [activeAutomationKeyword, automationKeywords.length, count, generateCaptionForSlides, handleSendToTelegram, keyword, runGenerationFlow]);
+  }, [automationKeywords]);
+
+  // Music state
+  const [musicMood, setMusicMood] = useState("dark");
+  const [musicTracks, setMusicTracks] = useState<MusicTrack[]>([]);
+  const [musicLoading, setMusicLoading] = useState(false);
+  const [musicError, setMusicError] = useState("");
+  const [playingTrackId, setPlayingTrackId] = useState<number | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Swarm Intelligence State
+  const [insights, setInsights] = useState<ResearchInsight[]>([]);
+  const [history, setHistory] = useState<PastGeneration[]>([]);
+  const [intelligenceLoading, setIntelligenceLoading] = useState(false);
+
+  const generateCaptionForSlides = useCallback(async (
+    slideItems: GeneratedSlide[],
+    angleText?: string,
+    keywordText?: string
+  ) => {
+    if (!slideItems || slideItems.length === 0) return;
     setCaptionLoading(true);
     setCaptionError("");
     try {
@@ -243,13 +226,10 @@ export default function Home() {
       if (!response.ok) {
         throw new Error(getResponseErrorMessage(payload, `Caption API failed: ${response.status}`));
       }
-      const caption = payload.data?.caption || "";
-      setCaptionText(caption);
-      return caption;
+      setCaptionText(payload.data?.caption || "");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate caption.";
       setCaptionError(message);
-      return null;
     } finally {
       setCaptionLoading(false);
     }
@@ -277,9 +257,6 @@ export default function Home() {
     const targetKeyword = targetKeywordInput.trim();
     if (!targetKeyword) return null;
 
-    const isLocalHost = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-    const effectiveCount = isLocalHost ? requestedCount : Math.min(requestedCount, 6);
-
     setState("loading");
     setError("");
     setAutopilotResult(null);
@@ -289,18 +266,14 @@ export default function Home() {
     setCaptionCopied(false);
     setTelegramStatus("");
     setTelegramError("");
-    setLoadingMessage(
-      isLocalHost
-        ? "Step 1: Brainstorming Hooks..."
-        : `Preview mode: generating ${effectiveCount} slides to avoid deployment timeout...`
-    );
+    setLoadingMessage("Step 1: Brainstorming Hooks...");
 
     try {
       // --- STAGE 1: THE PLAN ---
       const planResponse = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyword: targetKeyword, count: effectiveCount }),
+        body: JSON.stringify({ keyword: targetKeyword, count: requestedCount }),
       });
 
       const planPayload = await readResponsePayload<{ plan?: any; error?: string; message?: string }>(planResponse);
@@ -317,7 +290,6 @@ export default function Home() {
       const startTime = Date.now();
 
       setGeneratedKeyword(plan.keyword);
-      setGeneratedAngle(plan.winningAngle);
       setHookSource(plan.hookSource);
       
       if (plan.musicTrack) {
@@ -384,14 +356,12 @@ export default function Home() {
       const elapsed = (Date.now() - startTime) / 1000;
       setGenerationTime(Math.round(elapsed));
       setState("done");
-      const caption = await generateCaptionForSlides(processedSlides, plan.winningAngle, plan.keyword);
+      await generateCaptionForSlides(processedSlides, plan.winningAngle, plan.keyword);
 
       return {
         keyword: plan.keyword,
         angle: plan.winningAngle,
         slides: processedSlides,
-        caption,
-        previewMode: !isLocalHost,
       };
 
     } catch (err) {
@@ -445,22 +415,6 @@ export default function Home() {
             : "Generated a deployed preview batch.",
           vaultFolder: undefined,
         });
-
-        if (previewResult.caption) {
-          const telegramOutcome = await handleSendToTelegram({
-            slides: previewResult.slides,
-            caption: previewResult.caption,
-            keyword: previewResult.keyword,
-            angle: previewResult.angle,
-          });
-
-          if (telegramOutcome?.ok) {
-            setAutopilotResult((current) => current ? {
-              ...current,
-              message: telegramOutcome.message || current.message,
-            } : current);
-          }
-        }
       }
 
       return;
@@ -521,7 +475,7 @@ export default function Home() {
       setError(message);
       setState("error");
     }
-  }, [activeAutomationKeyword, automationKeywords.length, count, generateCaptionForSlides, keyword, runGenerationFlow]);
+  }, [activeAutomationKeyword, automationKeywords.length, count, keyword, runGenerationFlow]);
 
   // The Scheduling Timer
   useEffect(() => {
@@ -538,23 +492,10 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [autoSettings.enabled, nextRunTime, handleAutopilot, scheduleNextRun]);
 
-  const handleSendToTelegram = useCallback(async (batch?: {
-    folder?: string;
-    slides?: GeneratedSlide[];
-    caption?: string;
-    keyword?: string;
-    angle?: string;
-  }) => {
-    const folder = batch?.folder || autopilotResult?.vaultFolder || "";
-    const slidesToSend = batch?.slides || slides;
-    const captionToSend = (batch?.caption || captionText || "").trim();
-    const keywordToSend = batch?.keyword || generatedKeyword || keyword || "mindset";
-    const angleToSend = batch?.angle || generatedAngle || generatedKeyword || keywordToSend;
-
-    if (!folder && slidesToSend.length === 0) {
-      const message = "No saved vault batch or preview slides are available to send.";
-      setTelegramError(message);
-      return { ok: false, message };
+  const handleSendToTelegram = useCallback(async () => {
+    if (!autopilotResult?.vaultFolder) {
+      setTelegramError("No saved vault batch is available to send.");
+      return;
     }
 
     setTelegramSending(true);
@@ -562,19 +503,10 @@ export default function Home() {
     setTelegramStatus("Sending Telegram approval request...");
 
     try {
-      const body = folder
-        ? { folder }
-        : {
-            keyword: keywordToSend,
-            angle: angleToSend,
-            caption: captionToSend,
-            slides: slidesToSend,
-          };
-
       const response = await fetch("/api/telegram/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ folder: autopilotResult.vaultFolder }),
       });
 
       const payload = await readResponsePayload<{ success?: boolean; folder?: string; message?: string; error?: string }>(response);
@@ -586,18 +518,15 @@ export default function Home() {
         throw new Error(payload.rawText || "Telegram send returned an invalid response.");
       }
 
-      const successMessage = payload.data.message || `Sent ${payload.data.folder || folder || "preview batch"} to Telegram.`;
-      setTelegramStatus(successMessage);
-      return { ok: true, message: successMessage };
+      setTelegramStatus(payload.data.message || `Sent ${payload.data.folder || autopilotResult.vaultFolder} to Telegram.`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to send Telegram approval request.";
       setTelegramError(message);
       setTelegramStatus("");
-      return { ok: false, message };
     } finally {
       setTelegramSending(false);
     }
-  }, [autopilotResult?.vaultFolder, captionText, generatedAngle, generatedKeyword, keyword, slides]);
+  }, [autopilotResult?.vaultFolder]);
 
   const handleFetchMusic = useCallback(async () => {
     setMusicLoading(true);
@@ -926,24 +855,13 @@ export default function Home() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-              <button
-                id="download-zip-btn"
-                className="btn-download"
-                onClick={handleDownloadZip}
-              >
-                📦 Download ZIP
-              </button>
-              {slides.length > 0 && (
-                <button
-                  className="btn-download"
-                  onClick={() => void handleSendToTelegram()}
-                  disabled={telegramSending}
-                >
-                  {telegramSending ? "Sending..." : "📨 Send to Telegram"}
-                </button>
-              )}
-            </div>
+            <button
+              id="download-zip-btn"
+              className="btn-download"
+              onClick={handleDownloadZip}
+            >
+              📦 Download ZIP
+            </button>
           </div>
 
           {autopilotResult && (
@@ -993,6 +911,18 @@ export default function Home() {
                 </p>
               )}
               <p style={{ margin: "0", fontSize: '13px', color: '#a1a1aa' }}>{autopilotResult.message}</p>
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '14px' }}>
+                {autopilotResult.vaultFolder && (
+                  <button
+                    className="btn-download"
+                    onClick={handleSendToTelegram}
+                    disabled={telegramSending}
+                    style={{ padding: '10px 18px', fontSize: '13px' }}
+                  >
+                    {telegramSending ? "Sending..." : "📨 Send to Telegram"}
+                  </button>
+                )}
+              </div>
               {telegramStatus && (
                 <p style={{ margin: '10px 0 0 0', fontSize: '13px', color: '#a1a1aa' }}>
                   {telegramStatus}
