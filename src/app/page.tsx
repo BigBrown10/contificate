@@ -54,6 +54,42 @@ function parseAutomationKeywords(raw: string): string[] {
   );
 }
 
+interface ParsedResponse<T> {
+  data: T | null;
+  rawText: string;
+}
+
+async function readResponsePayload<T>(response: Response): Promise<ParsedResponse<T>> {
+  const rawText = await response.text();
+  if (!rawText.trim()) {
+    return { data: null, rawText };
+  }
+
+  try {
+    return { data: JSON.parse(rawText) as T, rawText };
+  } catch {
+    return { data: null, rawText };
+  }
+}
+
+function getResponseErrorMessage<T extends { error?: unknown; message?: unknown }>(
+  payload: ParsedResponse<T>,
+  fallback: string
+): string {
+  if (payload.data && typeof payload.data === "object") {
+    if (typeof payload.data.message === "string" && payload.data.message.trim()) {
+      return payload.data.message;
+    }
+
+    if (typeof payload.data.error === "string" && payload.data.error.trim()) {
+      return payload.data.error;
+    }
+  }
+
+  const raw = payload.rawText.trim();
+  return raw || fallback;
+}
+
 interface ResearchInsight {
   id: number;
   source_type: string;
@@ -185,11 +221,11 @@ export default function Home() {
         }),
       });
 
-      const data = await response.json();
+      const payload = await readResponsePayload<{ caption?: string; error?: string; message?: string }>(response);
       if (!response.ok) {
-        throw new Error(data.error || `Caption API failed: ${response.status}`);
+        throw new Error(getResponseErrorMessage(payload, `Caption API failed: ${response.status}`));
       }
-      setCaptionText(data.caption || "");
+      setCaptionText(payload.data?.caption || "");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate caption.";
       setCaptionError(message);
@@ -238,12 +274,16 @@ export default function Home() {
         body: JSON.stringify({ keyword: keyword.trim(), count }),
       });
 
+      const planPayload = await readResponsePayload<{ plan?: any; error?: string; message?: string }>(planResponse);
       if (!planResponse.ok) {
-        const data = await planResponse.json();
-        throw new Error(data.error || `Planning failed: ${planResponse.status}`);
+        throw new Error(getResponseErrorMessage(planPayload, `Planning failed: ${planResponse.status}`));
       }
 
-      const { plan } = await planResponse.json();
+      if (!planPayload.data || !planPayload.data.plan) {
+        throw new Error(planPayload.rawText || "Planning response was invalid.");
+      }
+
+      const { plan } = planPayload.data;
       setResearchSources(plan.researchSources || []);
       const startTime = Date.now();
 
@@ -277,8 +317,12 @@ export default function Home() {
         });
 
         if (res.ok) {
-          const { slide } = await res.json();
-          processedSlides.push(slide);
+          const slidePayload = await readResponsePayload<{ slide?: GeneratedSlide; error?: string; message?: string }>(res);
+          if (!slidePayload.data || !slidePayload.data.slide) {
+            throw new Error(slidePayload.rawText || `Slide processing returned an invalid response for slide ${i + 1}.`);
+          }
+
+          processedSlides.push(slidePayload.data.slide);
           setSlides([...processedSlides]); // Update UI in real-time
         }
       }
@@ -298,8 +342,12 @@ export default function Home() {
       });
 
       if (ctaRes.ok) {
-        const { slide } = await ctaRes.json();
-        processedSlides.push(slide);
+        const ctaPayload = await readResponsePayload<{ slide?: GeneratedSlide; error?: string; message?: string }>(ctaRes);
+        if (!ctaPayload.data || !ctaPayload.data.slide) {
+          throw new Error(ctaPayload.rawText || "CTA processing returned an invalid response.");
+        }
+
+        processedSlides.push(ctaPayload.data.slide);
         setSlides([...processedSlides]);
       }
 
@@ -348,12 +396,27 @@ export default function Home() {
       });
 
       const elapsed = (performance.now() - startTime) / 1000;
-      
-      const data = await response.json();
+
+      const payload = await readResponsePayload<{
+        status?: string;
+        score?: number;
+        critique?: string;
+        message?: string;
+        angle?: string;
+        slides?: GeneratedSlide[];
+        vaultFolder?: string;
+        error?: string;
+      }>(response);
       
       if (!response.ok) {
-        throw new Error(data.message || `Server error: ${response.status}`);
+        throw new Error(getResponseErrorMessage(payload, `Server error: ${response.status}`));
       }
+
+      if (!payload.data) {
+        throw new Error(payload.rawText || "Autopilot returned an invalid response.");
+      }
+
+      const data = payload.data;
 
       if (data.status === "failed") {
         throw new Error(`Pipeline Failed: ${data.message} ${data.critique ? '(' + data.critique + ')' : ''}`);
@@ -413,12 +476,16 @@ export default function Home() {
         body: JSON.stringify({ folder: autopilotResult.vaultFolder }),
       });
 
-      const data = await response.json();
+      const payload = await readResponsePayload<{ success?: boolean; folder?: string; message?: string; error?: string }>(response);
       if (!response.ok) {
-        throw new Error(data.error || data.message || `Telegram send failed: ${response.status}`);
+        throw new Error(getResponseErrorMessage(payload, `Telegram send failed: ${response.status}`));
       }
 
-      setTelegramStatus(data.message || `Sent ${data.folder || autopilotResult.vaultFolder} to Telegram.`);
+      if (!payload.data) {
+        throw new Error(payload.rawText || "Telegram send returned an invalid response.");
+      }
+
+      setTelegramStatus(payload.data.message || `Sent ${payload.data.folder || autopilotResult.vaultFolder} to Telegram.`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to send Telegram approval request.";
       setTelegramError(message);
