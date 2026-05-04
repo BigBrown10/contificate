@@ -5,6 +5,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import JSZip from "jszip";
+import { fetchMusicTracks } from "@/lib/freesound";
 import { sendApprovalRequest } from "@/lib/telegram";
 import { GeneratedSlide } from "@/lib/types";
 
@@ -27,6 +28,9 @@ interface PreviewBatchPayload {
   keyword?: string;
   angle?: string;
   caption?: string;
+  musicUrl?: string;
+  musicName?: string;
+  musicMood?: string;
   slides?: PreviewSlidePayload[];
 }
 
@@ -65,6 +69,36 @@ function slugify(value: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 48) || "preview";
+}
+
+async function appendMusicTrack(zip: JSZip, payload: PreviewBatchPayload) {
+  let musicUrl = payload.musicUrl?.trim();
+  let musicName = payload.musicName?.trim();
+
+  if (!musicUrl) {
+    const mood = payload.musicMood?.trim() || "dark";
+    const keyword = payload.keyword?.trim() || payload.angle?.trim() || "preview";
+    const tracks = await fetchMusicTracks(mood, 1, keyword);
+    const track = tracks[0];
+
+    musicUrl = track?.previewUrl?.trim();
+    musicName = track?.name?.trim() || musicName;
+  }
+
+  if (!musicUrl) {
+    throw new Error("No music track was available for the Telegram preview batch.");
+  }
+
+  const response = await fetch(musicUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch music track: ${response.status} ${response.statusText}`);
+  }
+
+  const audioBuffer = await response.arrayBuffer();
+  zip.file(
+    `music_${slugify(musicName || payload.keyword || payload.angle || "preview-track")}.mp3`,
+    Buffer.from(audioBuffer)
+  );
 }
 
 async function sendSavedFolderToTelegram(folder: string) {
@@ -119,30 +153,13 @@ async function sendPreviewBatchToTelegram(payload: PreviewBatchPayload) {
     );
   });
 
+  await appendMusicTrack(zip, payload);
+
   const caption = payload.caption?.trim() || "Preview batch generated from deployed autopilot.";
   const keyword = payload.keyword?.trim() || "preview";
   const angle = payload.angle?.trim() || keyword;
 
   zip.file("caption.txt", `${caption}\n`);
-  zip.file(
-    "metadata.json",
-    JSON.stringify(
-      {
-        keyword,
-        angle,
-        caption,
-        generatedAt: new Date().toISOString(),
-        slides: slides.map((slide, index) => ({
-          order: index + 1,
-          role: slide.role,
-          text: slide.hookText,
-          photographer: slide.photographer,
-        })),
-      },
-      null,
-      2
-    )
-  );
 
   const zipBuffer = Buffer.from(await zip.generateAsync({ type: "uint8array" }));
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "jinta-preview-"));

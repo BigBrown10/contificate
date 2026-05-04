@@ -207,8 +207,8 @@ export default function Home() {
     slideItems: GeneratedSlide[],
     angleText?: string,
     keywordText?: string
-  ) => {
-    if (!slideItems || slideItems.length === 0) return;
+  ): Promise<string> => {
+    if (!slideItems || slideItems.length === 0) return "";
     setCaptionLoading(true);
     setCaptionError("");
     try {
@@ -226,10 +226,13 @@ export default function Home() {
       if (!response.ok) {
         throw new Error(getResponseErrorMessage(payload, `Caption API failed: ${response.status}`));
       }
-      setCaptionText(payload.data?.caption || "");
+      const generatedCaption = payload.data?.caption || "";
+      setCaptionText(generatedCaption);
+      return generatedCaption;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate caption.";
       setCaptionError(message);
+      return "";
     } finally {
       setCaptionLoading(false);
     }
@@ -360,12 +363,33 @@ export default function Home() {
       const elapsed = (Date.now() - startTime) / 1000;
       setGenerationTime(Math.round(elapsed));
       setState("done");
-      await generateCaptionForSlides(processedSlides, plan.winningAngle, plan.keyword);
+      const generatedCaption = await generateCaptionForSlides(processedSlides, plan.winningAngle, plan.keyword);
+
+      let resolvedMusicTrack = plan.musicTrack || null;
+      if (!resolvedMusicTrack) {
+        try {
+          const musicResponse = await fetch(
+            `/api/music?mood=${encodeURIComponent(musicMood)}&keyword=${encodeURIComponent(plan.keyword)}&count=1`
+          );
+
+          if (musicResponse.ok) {
+            const musicPayload = await musicResponse.json();
+            resolvedMusicTrack = musicPayload.tracks?.[0] || null;
+            if (resolvedMusicTrack) {
+              setMusicTracks([resolvedMusicTrack]);
+            }
+          }
+        } catch (err) {
+          console.error("Failed to fetch fallback music for generation:", err);
+        }
+      }
 
       return {
         keyword: plan.keyword,
         angle: plan.winningAngle,
         slides: processedSlides,
+        caption: generatedCaption,
+        musicTrack: resolvedMusicTrack,
       };
 
     } catch (err) {
@@ -431,6 +455,10 @@ export default function Home() {
             body: JSON.stringify({
               keyword: targetKeyword,
               angle: previewResult.angle,
+              caption: previewResult.caption,
+              musicUrl: previewResult.musicTrack?.previewUrl,
+              musicName: previewResult.musicTrack?.name,
+              musicMood,
               slides: previewResult.slides,
             }),
           });
