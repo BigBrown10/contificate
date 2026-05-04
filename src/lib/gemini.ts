@@ -73,6 +73,27 @@ function isTasteApproved(draft: DraftSequence, evaluation: JudgeResult): boolean
     return false;
   }
 
+  const stockCliches = [
+    "dark room",
+    "empty room",
+    "look in the mirror",
+    "mirror",
+    "cold dread",
+    "screen darkens",
+    "staring into",
+    "this isn't just",
+    "built brick by brick",
+    "late-night phone",
+    "your chest",
+    "real touch",
+    "stranger in the mirror",
+    "deeply human",
+  ];
+
+  if (stockCliches.some((phrase) => hook.includes(phrase))) {
+    return false;
+  }
+
   if (!hook.includes("corn")) {
     return false;
   }
@@ -152,18 +173,21 @@ This is not brand copy.
 This is not a motivational reel.
 This is not a self-help template.
 
-The reader should feel the sting on the first line.
+The reader should feel interrupted on the first line.
 
 Hard rules:
 - Use "corn" directly.
 - Never use the phrase "corn loop".
 - Never write slogans like "unlock your potential", "change your life", "believe in yourself", or "level up".
-- Start every concept in a real place: bed, bathroom, car, desk, mirror, shower, late-night phone, empty room.
+- Start with a specific action, object, or consequence. Do not open with a generic mood statement.
+- Avoid stock openings like dark room, empty room, mirror, cold dread, or "look in the mirror" unless the detail is unusually specific.
+- Use fresh, ordinary settings: parking lot, kitchen sink, train seat, bathroom floor, checkout line, hoodie sleeve, desk lamp, car seat, unread text, laptop trackpad.
 - Each slide must contain one concrete thing, one feeling, and one consequence.
 - Prefer plain words over abstract ones.
 - If a line could fit any generic self-improvement page, reject it.
 - No preaching, no ad copy, no guru language.
 - The subject should feel like a corn habit or corn trap, not a slogan.
+- Make it feel like a confession or an interruption, not clickbait.
 
 The concepts should feel like:
 1. the urge before the relapse
@@ -396,6 +420,7 @@ Your job is to rate them ruthlessly out of 10 based on:
 3. Sensory Truth: Can you see, hear, or feel the moment?
 4. Human Truth: Does it read like lived experience instead of AI copy?
 5. First-glance impact: Does it hit hard immediately without sounding clickbait?
+6. Novelty: Does it avoid stock dark-room, mirror, and empty-room imagery?
 
 Drafts:
 ${draftsJson}
@@ -405,6 +430,7 @@ Select the best draft out of the 3.
 Give it a brutal score out of 10.
 If the best draft STILL scores below an 8/10, you must reject it by returning bestDraftIndex as -1. We do NOT publish vague or generic content.
 Reject hooks that lean on slogans, abstract motivation, fake intensity, or interchangeable self-help language.
+Reject hooks that feel like stock motivational bait, especially if they reuse dark-room, mirror, empty-room, or cold-dread framing.
 Provide a 1-sentence gritty critique explaining your decision.
 `;
 
